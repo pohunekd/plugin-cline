@@ -1,0 +1,3 @@
+<ESC>]0;Cline
+<ESC>]0;> hello there
+<ESC>]0;> run the long command

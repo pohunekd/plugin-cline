@@ -1,0 +1,40 @@
+
+ ❯ /team say hello with a helper
+
+ * team_spawn_teammate(helper: You are the helper teammate.)
+     {
+     "agentId": "helper",
+     "status": "spawned"
+   }
+
+ * [team] teammate spawned: helper
+
+ * team_run_task(sync helper: Say hello.)
+   ⎿ {
+     "agentId": "helper",
+     "mode": "sync",
+     "status": "running",
+     "dispatched": true,
+   ... 4 more lines
+
+ * [mission] helper: Completed a delegated run (1 iterations)
+
+ * [mission] helper: Completed a delegated run (1 iterations)
+
+ * The team is done.
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Ask anything...
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ stub-model (10) $0.00                                                                               ○ Plan ● Act (Tab)
+ ws (main)
+ ▶▶ Auto-approve all enabled (Shift+Tab)

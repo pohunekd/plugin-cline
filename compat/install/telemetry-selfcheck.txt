@@ -1,0 +1,1 @@
+{"telemetry_selfcheck":true,"enabled":true,"otlp_endpoint_host":"otel.cline.bot","logs_exporter":"otlp","metrics_exporter":"otlp","traces_exporter":"otlp"}

@@ -1,0 +1,7 @@
+before /undo:
+README.md: changed
+added.txt: new
+after /undo:
+README.md: # capture workspace
+added.txt: <absent>
+git status:

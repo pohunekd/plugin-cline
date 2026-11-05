@@ -1,0 +1,11 @@
+Usage: cline doctor [options]
+
+Diagnose and fix configuration issues
+
+Options:
+  -h, --help  display help for command
+
+Commands:
+  fix  Kill all running processes
+  log  Open the CLI log file
+

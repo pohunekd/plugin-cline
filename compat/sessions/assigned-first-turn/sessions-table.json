@@ -1,0 +1,72 @@
+[
+  {
+    "session_id": "c0ffee00-0000-4000-8000-000000000001",
+    "source": "cli",
+    "started_at": "2026-11-05T23:42:01.482Z",
+    "ended_at": null,
+    "exit_code": null,
+    "status": "idle",
+    "status_lock": 4,
+    "interactive": 1,
+    "provider": "openai-compatible",
+    "model": "stub-model",
+    "cwd": "/capture-root____/s/hooks/ws",
+    "workspace_root": "/capture-root____/s/hooks/ws",
+    "team_name": "team-xzogr",
+    "enable_tools": 1,
+    "enable_spawn": 1,
+    "enable_teams": 1,
+    "parent_session_id": null,
+    "parent_agent_id": null,
+    "agent_id": null,
+    "conversation_id": null,
+    "is_subagent": 0,
+    "prompt": "<user_input mode=\"act\">first turn</user_input>",
+    "metadata_json": {
+      "sessionHistoryOrigin": {
+        "mode": "user",
+        "version": "3.0.74"
+      },
+      "git": {
+        "branch": "main"
+      },
+      "checkpoint": {
+        "latest": {
+          "ref": "0000000000000000000000000000000000000001",
+          "createdAt": 1793922123769,
+          "runCount": 1,
+          "kind": "commit"
+        },
+        "history": [
+          {
+            "ref": "0000000000000000000000000000000000000001",
+            "createdAt": 1793922123769,
+            "runCount": 1,
+            "kind": "commit"
+          }
+        ]
+      },
+      "title": "first turn",
+      "totalCost": 0,
+      "aggregatedAgentsCost": 0,
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "totalCost": 0
+      },
+      "aggregateUsage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "totalCost": 0
+      }
+    },
+    "transcript_path": "",
+    "hook_path": "",
+    "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/c0ffee00-0000-4000-8000-000000000001.messages.json",
+    "updated_at": "2026-11-05T23:42:03.849Z"
+  }
+]

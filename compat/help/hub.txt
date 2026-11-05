@@ -1,0 +1,6 @@
+Usage: cline hub [options]
+
+Manage the local hub daemon
+
+Options:
+  -h, --help  display help for command

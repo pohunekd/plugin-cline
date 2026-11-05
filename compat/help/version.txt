@@ -1,0 +1,6 @@
+Usage: cline version [options]
+
+Show Cline CLI version number
+
+Options:
+  -h, --help  display help for command

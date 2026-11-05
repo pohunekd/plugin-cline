@@ -1,0 +1,8 @@
+# no hub running, no sandbox mode; while the TUI runs
+pane:
+node-MainThread [session leader]: node /capture-root____/prefix/3.0.74/bin/cline --id c0ffee00-0000-4000-8000-000000000004
+  .cline: /capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/.cline --id c0ffee00-0000-4000-8000-000000000004
+    .cline [session leader]: /capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/.cline --cline-hub-daemon --cwd /capture-root____/s/hub-prewarm/ws --host 127.0.0.1 --port 27463 --pathname /hub
+hub daemons:
+parent: .cline
+.cline [session leader]: /capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/.cline --cline-hub-daemon --cwd /capture-root____/s/hub-prewarm/ws --host 127.0.0.1 --port 27463 --pathname /hub

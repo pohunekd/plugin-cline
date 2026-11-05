@@ -1,0 +1,17 @@
+[
+  {
+    "file": "/capture-root____/s/errors/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/c0ffee00-0000-4000-8000-000000000001.messages.json",
+    "keys": [
+      "agent",
+      "messages",
+      "origin",
+      "sessionId",
+      "system_prompt",
+      "updated_at",
+      "version"
+    ],
+    "agent": "lead",
+    "sessionId": "c0ffee00-0000-4000-8000-000000000001",
+    "messages": 2
+  }
+]

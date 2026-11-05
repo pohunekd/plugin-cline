@@ -1,0 +1,101 @@
+{
+  "event": "TaskComplete",
+  "env_names": [
+    "CAPTURE_PROBE",
+    "CLINE_BUILD_ENV",
+    "CLINE_CONNECTOR_CLI_LAUNCH",
+    "CLINE_DATA_DIR",
+    "CLINE_DB_DATA_DIR",
+    "CLINE_DIR",
+    "CLINE_DISABLE_CLINE_PASS_NOTICE",
+    "CLINE_HOOKS_LOG_PATH",
+    "CLINE_HOOK_AGENT_RESUME",
+    "CLINE_HUB_DISCOVERY_PATH",
+    "CLINE_HUB_PORT",
+    "CLINE_NO_AUTO_UPDATE",
+    "CLINE_PROVIDER_SETTINGS_PATH",
+    "CLINE_SANDBOX",
+    "CLINE_SANDBOX_DATA_DIR",
+    "CLINE_SESSION_DATA_DIR",
+    "CLINE_TEAM_DATA_DIR",
+    "CLINE_WRAPPER_PATH",
+    "HOME",
+    "LANG",
+    "LOGNAME",
+    "NODE_EXTRA_CA_CERTS",
+    "OPENTUI_GRAPHICS",
+    "PATH",
+    "PWD",
+    "SHLVL",
+    "TERM",
+    "TMPDIR",
+    "USER"
+  ],
+  "env_values": {
+    "CAPTURE_PROBE": "probe-value",
+    "CLINE_BUILD_ENV": "production",
+    "CLINE_CONNECTOR_CLI_LAUNCH": "<151 chars>",
+    "CLINE_DATA_DIR": "/capture-root____/s/history/fakehome/.cline/data",
+    "CLINE_DB_DATA_DIR": "/capture-root____/s/history/fakehome/.cline/data/db",
+    "CLINE_DIR": "/capture-root____/s/history/fakehome/.cline",
+    "CLINE_DISABLE_CLINE_PASS_NOTICE": "1",
+    "CLINE_HOOKS_LOG_PATH": "/capture-root____/s/history/fakehome/.cline/data/logs/hooks.jsonl",
+    "CLINE_HOOK_AGENT_RESUME": "1",
+    "CLINE_HUB_DISCOVERY_PATH": "/capture-root____/s/history/hub/discovery.json",
+    "CLINE_HUB_PORT": "27463",
+    "CLINE_NO_AUTO_UPDATE": "1",
+    "CLINE_PROVIDER_SETTINGS_PATH": "/capture-root____/s/history/fakehome/.cline/data/settings/providers.json",
+    "CLINE_SANDBOX": "1",
+    "CLINE_SANDBOX_DATA_DIR": "/capture-root____/s/history/fakehome/.cline/data",
+    "CLINE_SESSION_DATA_DIR": "/capture-root____/s/history/fakehome/.cline/data/sessions",
+    "CLINE_TEAM_DATA_DIR": "/capture-root____/s/history/fakehome/.cline/data/teams",
+    "CLINE_WRAPPER_PATH": "/capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/cline"
+  },
+  "ancestors": [
+    {
+      "comm": ".cline",
+      "args": "/capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/.cline --id c0ffee00-0000-4000-8000-000000000002"
+    },
+    {
+      "comm": "node-MainThread",
+      "args": "<88 chars>"
+    },
+    {
+      "comm": "tmux: server",
+      "args": "<222 chars>"
+    },
+    {
+      "comm": "bash",
+      "args": "<232 chars>"
+    }
+  ],
+  "payload": {
+    "clineVersion": "",
+    "timestamp": "2026-11-05T23:44:35.396Z",
+    "taskId": "conv_0000000000021_0000000",
+    "sessionContext": {
+      "rootSessionId": "c0ffee00-0000-4000-8000-000000000001"
+    },
+    "workspaceRoots": [
+      "/capture-root____/s/history/ws"
+    ],
+    "workspaceInfo": {
+      "rootPath": "/capture-root____/s/history/ws",
+      "hint": "ws",
+      "latestGitCommitHash": "0000000000000000000000000000000000000001",
+      "latestGitBranchName": "main"
+    },
+    "userId": "capture",
+    "agent_id": "agent_00000000-0000-4000-8000-000000000018",
+    "parent_agent_id": null,
+    "hookName": "agent_end",
+    "iteration": 1,
+    "turn": {
+      "outputText": "Reply after the switch.",
+      "status": "completed"
+    },
+    "taskComplete": {
+      "taskMetadata": {}
+    }
+  }
+}

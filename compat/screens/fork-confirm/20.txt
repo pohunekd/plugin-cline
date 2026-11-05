@@ -1,0 +1,40 @@
+
+ ❯ run a command
+
+ * run_commands(
+   touch approved-
+   by-capture.txt)
+   ⎿
+
+ * Command done.
+
+
+   Create a fork
+   of the
+   current
+   conversation?
+
+   The fork
+   becomes the
+   active
+   session. Use /
+   history to
+   switch back
+   or open
+   another
+   session.
+
+   Y/Enter to
+   confirm, N/
+   Esc to cancel
+
+
+────────────────────
+❯ Ask anything...
+────────────────────
+ ○ Plan ● Act (Tab)
+ (10) $0.00
+ ws (main)
+ Auto-approve all
+ disabled (
+ Shift+Tab)

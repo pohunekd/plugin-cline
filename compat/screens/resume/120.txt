@@ -1,0 +1,40 @@
+
+ ❯ first turn
+
+ * First turn reply.
+
+ ❯ spawn a helper
+
+ * spawn_agent(Say done.)
+     {"text":"Sub agent says done.","iterations":1,"finishReason":"completed","usage":{"inputTokens":10,"outputTokens":
+   5}}
+
+ * Parent saw the subagent.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Ask anything...
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ stub-model (10) $0.00                                                                               ○ Plan ● Act (Tab)
+ ws (main)
+ ▶▶ Auto-approve all enabled (Shift+Tab)

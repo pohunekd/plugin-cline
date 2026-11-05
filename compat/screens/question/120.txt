@@ -1,0 +1,40 @@
+
+ ❯ run a command
+
+ * run_commands(touch approved-by-capture.txt)
+   ⎿
+
+ * Command done.
+
+ ❯ ask me something
+
+ ⠧ ask_question(Which color do you prefer?)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Cline is asking a question
+
+ Which color do you prefer?
+
+  > Red
+    Blue
+    Green
+    Type a response...
+
+
+ stub-model (10) $0.00                                                                               ○ Plan ● Act (Tab)
+ ws (main)
+ Auto-approve all disabled (Shift+Tab)

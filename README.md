@@ -1,0 +1,201 @@
+# plugin-cline
+
+Pohunek runtime plugin for the [Cline CLI](https://github.com/cline/cline)
+terminal coding agent.
+
+| | |
+|---|---|
+| Repository | `pohunekd/plugin-cline` |
+| Package id | `pohunek.runtime.cline` |
+| Runtime id (`--agent`) | `cline` |
+| Upstream | Cline CLI by Cline Bot Inc. (Apache-2.0), npm package `cline` |
+| Status | **P0, evidence only**: the capture kit and the Cline 3.0.74 corpus (Linux x86_64). No runtime package yet; the descriptor is P1 |
+
+The plugin carries data and evidence only (descriptor, detect rules, captures).
+Handlers, reporters and parsers stay in the core repository
+[`zajca/pohunek`](https://github.com/zajca/pohunek); the plan is the epic #1
+and the issues P0-P5 of this repository.
+
+## What is here
+
+| Path | Content |
+|---|---|
+| `scripts/capture` | Capture kit (bash): fetches a release from the npm registry, checks its integrity, runs Cline in throwaway homes inside loopback-only namespaces and records what it shows, which hooks it runs and what it stores |
+| `scripts/model-stub` | Loopback OpenAI-compatible chat-completions stub (Python standard library): scripted text, tool calls and HTTP errors |
+| `scripts/hook-log` | Cline file hook that logs one hook call: payload, environment names, `CLINE_*`/`CAPTURE_*` values, ancestor processes |
+| `compat/RELEASE` | The release every capture comes from: version, npm integrity of both packages, binary sha256, the older release the hub step runs beside it |
+| `compat/install/` | `--version`, npm layout, postinstall cache, process trees, settings after a start, telemetry self check |
+| `compat/help/` | `--help` of every command |
+| `compat/screens/<scenario>/<width>.txt` | Terminal screens; `INDEX.tsv` lists each scenario and width as captured or missed, and a missed one keeps the screen that showed instead as `<width>.unmatched.txt` |
+| `compat/terminal/` | Terminal titles, OSC kinds, DEC modes, BEL count, the startup bytes |
+| `compat/hooks/<scenario>/` | One JSON file per hook call, numbered in call order, and `SUMMARY.tsv` (event, hookName, rootSessionId, agent ids, ancestor comms) |
+| `compat/sessions/<scenario>/` | The `sessions` table (JSON columns parsed), team tables with rows, session manifests, the envelope of every messages file, the store tree |
+| `compat/hub/` | Hub daemon process trees, runtime routing lines of the CLI log, hub start and stop output |
+| `compat/headless/` | NDJSON of a `--json` run |
+| `compat/stub/` | The stub's request logs (reply served, tool names offered; no message content) |
+
+## No credentials, no real model, no network
+
+- **Model turns** go to `scripts/model-stub` on 127.0.0.1, configured with
+  `cline auth -p openai -k capture-placeholder-key -m stub-model -b http://127.0.0.1:<port>/v1`.
+  The key is a placeholder; the kit never signs in, and the sign-in screens
+  start inside the namespace, where no request leaves the host.
+- **Isolation.** Only the `install` step uses the network (the npm registry
+  over HTTPS). Every other step runs in user, network, mount, UTS and PID
+  namespaces: only a loopback interface, the root bound to
+  `/run/capture-root`, a synthetic passwd that names the caller `capture`,
+  host name `capture`. Every process of the run, a hub daemon included, ends
+  with the namespace.
+- **Per scenario** the CLI gets a cleared environment (`env -i`) with its own
+  `HOME`, `CLINE_DIR`, `CLINE_DATA_DIR`, `TMPDIR`, `CLINE_HUB_PORT` (27463 inside
+  the namespace) and `CLINE_HUB_DISCOVERY_PATH`, plus `CLINE_NO_AUTO_UPDATE=1`.
+  No `POHUNEK_*` or agent-session variable reaches it. Every scenario except
+  the hub ones runs in sandbox mode (`CLINE_SANDBOX=1`,
+  `CLINE_SANDBOX_DATA_DIR=<its data root>`), which keeps the session in the
+  TUI process.
+- **The operator's hub.** The namespace cannot reach a hub on the host's
+  loopback (the kit checks that 127.0.0.1:25463 is unreachable inside it).
+  After the run the kit fails when a hub daemon whose command line names the
+  capture root survives, or when a hub daemon that ran before the capture is
+  gone; it never signals a process outside the namespace.
+- **Telemetry.** Cline has no env opt-out; each throwaway
+  `global-settings.json` starts with `"telemetryOptOut": true` and
+  `"autoUpdateEnabled": false`, and the namespace has no route out.
+- **Evidence.** The capture root becomes `/capture-root____` (same width).
+  Ids Cline generates (session ids, `conv_*`, UUIDs, git hashes, teammate task
+  suffixes, team names) become stable placeholders of the same shape, so within one run of the
+  kit one id reads the same in every file (the map starts over with each run,
+  so a step re-run on its own numbers its ids afresh); the kit's own assigned ids
+  (`c0ffee00-...`) stay. `providers.json` and the hub discovery record are
+  never copied (only the record's key names). Before a step's files replace
+  those in `compat/`, a scan refuses host paths, user and host names (also
+  wrapped across rows or shortened), credential-shaped fields, the
+  placeholder key and `POHUNEK_`.
+
+## Running the kit
+
+Linux only. Needs bash 4+, tmux, curl, jq, sed, awk, perl (with
+`Digest::SHA`), sha256sum, git, ps, pgrep, node, python3, sqlite3, ip, mount,
+hostname and util-linux `unshare` 2.38+ with unprivileged user, network,
+mount, UTS and PID namespaces. No npm: the tarballs are unpacked as npm lays
+out a global install (`<prefix>/lib/node_modules/cline`, the platform package
+below its `node_modules`, `<prefix>/bin/cline` linking to the wrapper).
+
+```bash
+scripts/capture --root /path/to/scratch --dry-run all          # tool check, self tests; no network
+scripts/capture --root /path/to/scratch all                    # the release in compat/RELEASE
+scripts/capture --root /path/to/scratch --release 3.0.75 all   # the next release, one command
+scripts/capture --root /path/to/scratch hooks errors           # single steps (after install)
+```
+
+A new release is captured before the version lock moves: `--release` fetches
+it, `compat/RELEASE` records its integrity and binary sha256, and the
+previously recorded release becomes the older hub of the hub step. A release
+recorded in `compat/RELEASE` must still match the registry's integrity.
+macOS is not supported by this kit yet: `scripts/capture` refuses any
+platform but Linux (it has no `sandbox-exec` isolation path). The macOS arm64
+capture needs that path first and lands as `compat/macos-arm64/`.
+
+## Verified behaviour (Cline 3.0.74, Linux x86_64)
+
+Every row comes from the corpus in `compat/`. "Stub" means against
+`scripts/model-stub`, not a real model.
+
+### Install and process
+
+| Area | Result | Evidence |
+|---|---|---|
+| Version | `cline --version` and `cline version` print `3.0.74` | `install/version.txt` |
+| Packages | Wrapper `cline` (Node script `bin/cline`, `postinstall: node ./postinstall.mjs \|\| true`) plus `@cline/cli-linux-x64` holding a 161,793,504-byte ELF binary | `install/layout.txt`, `RELEASE` |
+| Process | The PTY root is `node` (comm `node-MainThread`); it spawns the binary as a child: comm `cline` (path in the platform package) without the postinstall cache, comm `.cline` (`bin/.cline`, a hard link) with it | `install/process-nocache.txt`, `install/process-cache.txt`, `install/postinstall-cache.txt` |
+| Settings | A pre-written `global-settings.json` with `telemetryOptOut: true` and `autoUpdateEnabled: false` keeps both values after a start; no other key is added | `install/settings-after-start.json` |
+| Telemetry self check | `--telemetry-selfcheck` reports `enabled: true` and host `otel.cline.bot` even with `telemetryOptOut: true` set; whether events would be sent is unverified (the namespace has no route) | `install/telemetry-selfcheck.txt` |
+| First start | Creates `db/{sessions,teams}.db`, `logs/cline.log`, `sessions/`, `settings/`; without network no `cache/feature-flags.json` appears | `install/first-start-tree.txt` |
+
+### Screens
+
+| State | Text | Evidence |
+|---|---|---|
+| Onboarding | `Welcome to Cline` / `Connect a model provider to get started.`, four cards, `↑/↓ navigate, Enter to select, Ctrl+C to exit` | `screens/onboarding/` |
+| Provider picker | `Choose a provider`, `Search providers...`, `▼ 228 more`, `Type to search, ↑/↓ navigate, Enter to select, Esc to go back` | `screens/provider-picker/` |
+| API-key form | `OpenAI Compatible`, `Base URL`, `API key`, `Tab to switch fields, Enter to save, Esc to go back, Ctrl+C to exit` | `screens/api-key-form/` |
+| Model step | After saving the form against the stub: `Set model ID` / `Enter to create, Esc to go back to model selection` | `screens/model-step/120.txt` |
+| Sign-in | `Signing in with Cline` and `Signing in with ClinePass` end offline with `getaddrinfo ETIMEOUT api.workos.com` / `Esc to go back`; `Signing in with ChatGPT` shows `⠏ Waiting for sign-in...` and `If the browser didn't open:` with the authorize URL, and hands that URL to `xdg-open`. The URL's `state` and `code_challenge` are nonces of the aborted offline flow: redacted in `signin-opened-urls.txt`, left in the screen, and new on every capture | `screens/signin-*`, `screens/signin-opened-urls.txt` |
+| Promo modals | `Try ClinePass` on the first launch with a provider, `Introducing Cline Desktop` / `Get Cline Desktop` on the second, none on the third; footer `Press Enter to open, any other key to close`. **The composer stays drawn behind the modal** (`❯ Wh...`). State in `settings/cli-notices.json`. With `CLINE_DISABLE_CLINE_PASS_NOTICE=1` three launches on one data root show neither and write no `cli-notices.json` | `screens/promo*/`, `screens/promo-suppressed-state.txt` |
+| Idle | Home: logo, `What can I do for you?`, composer `❯ What can I do for you?`; chat: `❯ Ask anything...`; footer `<model> (<ctx>) $<cost> ... ○ Plan ● Act (Tab)`, `<cwd> (<branch>)`, `▶▶ Auto-approve all enabled (Shift+Tab)` | `screens/idle-home/`, `screens/idle-chat/` |
+| Working | `⠇ Thinking... (esc to cancel)` above the composer; a running tool row `⠧ run_commands(sleep 8)`; finished rows start with `*`, a rejected one with `x`. **The idle composer stays drawn during a turn** | `screens/working-thinking/`, `screens/working-tool-row/` |
+| Approval | With `--auto-approve false`: `Cline needs permission` / `Approve tool call?` / `run_commands` / `$ <command>` / `[y] Approve   [n] Deny`, footer `Auto-approve all disabled (Shift+Tab)`. The `Thinking...` line shows at the same time | `screens/approval/` |
+| Approval answers | `y` runs the command; `n` rejects it (`Error: This tool call was rejected by the user`); **typing `yes please` and Enter runs the command** (the first `y` approves) | `screens/approval-approved/`, `screens/approval-n/`, `screens/approval-text/` (`effect.txt`) |
+| Question | `Cline is asking a question` / question / `> Red`, `Blue`, `Green` / `Type a response...`; `1` and Enter answers `Red` | `screens/question/`, `screens/question-answered/` |
+| Fork confirm | `Create a fork of the current conversation?` / `Y/Enter to confirm, N/Esc to cancel`; then `Forked into new session <id>. This is now the active session.` | `screens/fork-confirm/`, `screens/forked/` |
+| History picker | `Session History`, newest first, `↑/↓ navigate, Enter to resume, ← delete, → export, Esc to close` | `screens/history-picker/` |
+| Undo | `Restore to Checkpoint` (one entry per prompt), then `Restore chat only` / `Restore chat and workspace`; after a restore the composer holds the restored prompt | `screens/undo-*/` |
+| Error | A provider error ends the turn with `* Error: <message>` | `screens/error/` |
+| Exit | `/quit` prints `Session Summary` with `Continue  cline --id <id>` after leaving the alternate screen | `screens/exit-summary*/` |
+
+Screens are captured at widths 20, 40, 80, 120, 160 and 200 for onboarding,
+provider picker, API-key form, promo, idle, working, approval, question and
+fork confirm; the rest at 120 (`screens/INDEX.tsv`).
+
+### Terminal
+
+The title is OSC 0 `Cline`, then `> <prompt>` per submitted prompt; no title
+change for working, idle or blocked. The CLI sends OSC 0, 4, 10, 11, 12, 66,
+99 and 1337 (queries apart from the title), no OSC 7501, 9 or 777. Modes:
+`?1049h`, `?2004h` (bracketed paste), mouse `?1000/1002/1003/1006h`, `?1004h`,
+`?2026` synchronized output, `?2027h`, `?2031h` (`terminal/`).
+
+### Hooks (`<CLINE_DIR>/hooks/<Event>.sh`, sandbox mode)
+
+| Area | Result | Evidence |
+|---|---|---|
+| Launch with `--id <uuid>` | An unknown id starts a session under exactly that id; **every turn fires `TaskResume` (`agent_resume`), never `TaskStart`**, and the hook environment holds `CLINE_HOOK_AGENT_RESUME=1` | `hooks/assigned-first-turn/` |
+| Launch without `--id` | Every turn fires `TaskStart` (`agent_start`); the session id matches `^[0-9]{13}_[0-9a-z]{5}$` | `hooks/generated-id/`, `sessions/generated-id/id-shape.txt` |
+| Payload | `hookName`, `taskId` (`conv_*`), `sessionContext.rootSessionId` (the session id), `agent_id`, `parent_agent_id` (null for the lead), `userId` (the `USER` value), `clineVersion` (empty), `workspaceRoots`, `workspaceInfo`, plus `taskStart`/`taskResume`, `turn`/`taskComplete`, `error`, `tool_call`/`preToolUse`, `tool_result`/`postToolUse` | `hooks/*/` |
+| Environment | The TUI's environment (the marker `CAPTURE_PROBE` arrives) plus `CLINE_BUILD_ENV`, `CLINE_CONNECTOR_CLI_LAUNCH`, `CLINE_WRAPPER_PATH`, `NODE_EXTRA_CA_CERTS`, `OPENTUI_GRAPHICS` and the sandbox-mode data variables; the hook's ancestors are `.cline` > `node` > the terminal | `hooks/assigned-first-turn/001-TaskResume.json` |
+| Subagent (`spawn_agent`) | The subagent's hooks carry its own `agent_id`, the caller's `parent_agent_id` and the same `rootSessionId`; store row `<root>__<agent_id>`, `is_subagent=1`, its messages file in the root's session directory | `hooks/assigned-subagent/`, `sessions/assigned-subagent/` |
+| `/clear`, `/fork`, `/history` | No hook fires at the switch; the next turn's hooks carry the new `rootSessionId` (`/clear`: a new session; `/fork`: the id `Forked into new session` printed, with `metadata.fork.forkedFromSessionId`; `/history`: the chosen session) | `hooks/assigned-*-switch/`, `hooks/assigned-after-*/`, `hooks/history-after-switch/`, `sessions/assigned-after-fork/` |
+| `/undo` | Restoring chat and workspace resets the files to the checkpoint and continues in a new session id, reported by the next turn | `hooks/undo-after/`, `sessions/undo/workspace.txt` |
+| Relaunch `--id <uuid>` | Restores the conversation of that id from before `/clear` and `/fork` | `screens/resume/`, `hooks/assigned-resume/` |
+| Errors | An HTTP 400 from the provider fires `TaskError` (`agent_error`, `error.message`) after one request; the row reads `failed` | `hooks/error-400/`, `stub/error-400-requests.jsonl` |
+| Cancel | Escape while the model streams, Escape while a tool runs and Ctrl+C (which also exits) fire `SessionShutdown` (`session_shutdown`, no reason field), **never `TaskCancel`**; the row reads `cancelled`. Escape while a subagent streams fires `SessionShutdown` for the subagent (with its `parent_agent_id`) and for the lead | `hooks/cancel-*/`, `sessions/cancel-*/` |
+| `/quit` | Fires no hook | `hooks/assigned-quit/` (empty) |
+| `UserPromptSubmit` | Never fired in any TUI or headless turn of the corpus | `hooks/*/` |
+| Agent team | `/team <task>`: `team_spawn_teammate` and `team_run_task` run; the teammate's hooks carry its own `agent_id`, the same `rootSessionId` and **`parent_agent_id: null`**, so a teammate looks like a lead in its hooks; store row `<root>__teamtask__<agent>__<suffix>`, `is_subagent=1`, `team_name`; team tables in `db/teams.db` | `hooks/team/`, `sessions/team/` |
+
+### Hub placement (namespace only, private port)
+
+| Area | Result | Evidence |
+|---|---|---|
+| No hub, no sandbox mode | The TUI runs locally (`compatible_hub_unavailable`) and starts `.cline --cline-hub-daemon` as its child, a session leader that **survives the TUI's exit** | `hub/prewarm-*.txt`, `hub/prewarm-routing.tsv` |
+| Sandbox mode | Routing `local`, `forceLocalBackend: true`; no hub daemon while the TUI runs or after it exits | `hub/sandbox-*.txt`, `hub/sandbox-routing.tsv` |
+| Hub running | The TUI uses the hub (`Using discovered local hub runtime host`). **`--id <unknown uuid>` then fails with `Error: Unknown session: <id>`**; without `--id` the turn works, and its hooks run below the hub daemon (ancestors `.cline` > the namespace init), without a variable only the TUI had | `screens/hub-attach-*/`, `hooks/hub-attach/`, `hub/attach-*` |
+| Older hub | A 3.0.73 hub serving a 3.0.73 session: the 3.0.74 TUI falls back to the local runtime (`compatible_hub_unavailable`) and shows no hub dialog; the 3.0.73 hub keeps running | `screens/hub-outdated/`, `hub/outdated-*` |
+
+### Headless
+
+`cline --json -t 3 "<prompt>"` against a reply held 30 s ran the full 30 s and
+exited 0 with `run_result` `completed`: the timeout is not applied to the
+first turn of a prompt run (source: `apps/cli/src/runtime/run-agent.ts:319-342`
+schedules it after `start()` has run that turn). NDJSON in
+`headless/timeout.ndjson`.
+
+## Unverified
+
+- **macOS**: everything; the manager's capture lands as `compat/macos-arm64/`.
+- **Arch package** (`cline-cli`): the host package is 3.0.73, so the `arch`
+  step recorded nothing; its layout under the release is unverified.
+- **Hub dialogs** `Cline Hub update required` and `Cline Hub was updated`:
+  source only (`apps/cli/src/tui/root.tsx:660-695`,
+  `tui/components/dialogs/hub-update-required.tsx`); a 3.0.73 hub did not
+  trigger them, and sandbox mode never watches the hub
+  (`hub-update-required-helpers.ts`).
+- **Sign-in steps after the first screen**: the device-code screen
+  (`Your code:`) and the model list (`Choose a model`) are source only
+  (`tui/views/onboarding/screens.tsx:220,495`).
+- **`TaskCancel`**, **`UserPromptSubmit`**, **`PreCompact`**: never fired;
+  when they fire, if ever, is unverified.
+- **VCR playback** (`CLINE_VCR=playback`) with the TUI.
+- What the release would send to `otel.cline.bot` or fetch from
+  `data.cline.bot` with network: the namespace blocks both.
+- Behaviour with a real model or provider.

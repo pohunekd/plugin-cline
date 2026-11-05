@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Cline file hook used by scripts/capture: logs one hook call as JSON.
+#
+# usage: hook-log <log dir> <event>   (stdin: the hook payload)
+#
+# The record holds the event, the stdin payload, the names of every
+# environment variable, the values of CLINE_* and CAPTURE_* only, and the
+# comm and argv of each ancestor process, which shows whether the hook runs
+# below the TUI or below a hub daemon. It prints nothing, so Cline reads no
+# control output from it.
+set -euo pipefail
+
+logdir="$1"
+event="$2"
+payload="$(cat)"
+
+names="$(compgen -e | sort | jq -R . | jq -s .)"
+values="$(compgen -e | grep -E '^(CLINE_|CAPTURE_)' | sort | while IFS= read -r n; do
+  jq -n --arg k "$n" --arg v "${!n}" '{($k): $v}'
+done | jq -s 'add // {}')"
+
+# Ancestors from the parent up to the namespace's init process.
+ancestors='[]'
+pid="$PPID"
+while [[ -n "$pid" && "$pid" != 0 && -r "/proc/$pid/comm" ]]; do
+  comm="$(cat "/proc/$pid/comm")"
+  args="$(tr '\0' ' ' <"/proc/$pid/cmdline" | sed 's/ $//')"
+  ancestors="$(jq -c --arg c "$comm" --arg a "$args" '. + [{comm: $c, args: $a}]' <<<"$ancestors")"
+  [[ "$pid" != 1 ]] || break
+  pid="$(awk '/^PPid:/ {print $2}' "/proc/$pid/status")"
+done
+
+if ! jq -e . >/dev/null 2>&1 <<<"$payload"; then
+  payload="$(jq -Rs . <<<"$payload")"
+fi
+
+jq -n --arg event "$event" --argjson names "$names" --argjson values "$values" \
+  --argjson ancestors "$ancestors" --argjson payload "$payload" \
+  '{event: $event, env_names: $names, env_values: $values, ancestors: $ancestors, payload: $payload}' \
+  >"$logdir/$(date +%s%N)-$event.json"

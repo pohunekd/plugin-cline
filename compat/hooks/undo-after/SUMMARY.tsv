@@ -1,0 +1,2 @@
+001-TaskResume.json	TaskResume	agent_resume	0000000000006_00000	agent_00000000-0000-4000-8000-000000000020	-	.cline>node-MainThread>tmux: server>bash
+002-TaskComplete.json	TaskComplete	agent_end	0000000000006_00000	agent_00000000-0000-4000-8000-000000000020	-	.cline>node-MainThread>tmux: server>bash

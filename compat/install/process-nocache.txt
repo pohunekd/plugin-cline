@@ -1,0 +1,2 @@
+node-MainThread [session leader]: node /capture-root____/prefix/3.0.74/bin/cline
+  cline: /capture-root____/prefix/3.0.74/lib/node_modules/cline/node_modules/@cline/cli-linux-x64/bin/cline

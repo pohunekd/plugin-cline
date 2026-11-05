@@ -1,0 +1,13 @@
+{
+  "tables": [
+    "team_store_schema_version"
+  ],
+  "rows": {
+    "team_store_schema_version": [
+      {
+        "lock": 1,
+        "version": 2
+      }
+    ]
+  }
+}

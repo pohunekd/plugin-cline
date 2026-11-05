@@ -1,0 +1,36 @@
+
+
+
+
+                                                           @@
+                                                         @@@@@@
+                                                    @@@@@@@@@@@@@@@@
+                                                  @@@@@@@@@@@@@@@@@@@@
+                                                 @@@@@@@@@@@@@@@@@@@@@@
+                                                 @@@@@    @@@@    @@@@@
+                                               @@@@@@     *@@@     @@@@@@
+                                               @@@@@@     *@@@     @@@@@@
+                                                 @@@@@    @@@@.   @@@@@
+                                                 @@@@@@@@@@@@@@@@@@@@@@
+                                                  @@@@@@@@@@@@@@@@@@@@
+                                                    @@@@@@@@@@@@@@@@.
+
+                                                Signing in with ChatGPT
+
+                                                ⠇ Waiting for sign-in...
+
+                          ╭──────────────────────────────────────────────────────────────────╮
+                          │                                                                  │
+                          │  If the browser didn't open:                                     │
+                          │                                                                  │
+                          │  https://auth.openai.com/oauth/authorize?                        │
+                          │  response_type=code&client_id=app_EMoamEEZ73f0CkXaXp7hrann&redi  │
+                          │  rect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&scope  │
+                          │  =openid+profile+email+offline_access&code_challenge=YhMh0JsIfe  │
+                          │  9pjKtGN_6_RRG0Uho_DnVN0rJDQuza_lk&code_challenge_method=S256&s  │
+                          │  tate=I8OU6pJz99bC5YqtVCTzFcc_BOoaz4xp&id_token_add_organizatio  │
+                          │  ns=true&codex_cli_simplified_flow=true&originator=pi            │
+                          │                                                                  │
+                          ╰──────────────────────────────────────────────────────────────────╯
+
+                                             Esc to cancel, Ctrl+C to exit

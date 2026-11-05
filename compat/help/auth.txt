@@ -1,0 +1,19 @@
+Usage: cline auth [options] [provider]
+
+Authenticate a provider and configure what model is used
+
+Arguments:
+  provider                       Provider id (positional shorthand for -p)
+
+Options:
+  -p, --provider <id>            Provider ID
+  -k, --apikey <key>             API key
+  -m, --modelid <id>             Model ID
+  -b, --baseurl <url>            Base URL
+  --azure-api-version <version>  Azure API version
+  --config <dir>                 configuration directory
+  -c, --cwd <path>               Working directory
+  --data-dir <dir>               Use isolated local state at <dir> instead of
+                                 ~/.cline (enables sandbox mode)
+  -v, --verbose                  Show verbose output
+  -h, --help                     display help for command

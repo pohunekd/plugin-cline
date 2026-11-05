@@ -1,0 +1,8 @@
+Session Summary
+  ID        0000000000003_00000
+  Duration  4s
+  Model     openai-compatible:stub-model
+  CWD       /capture-root____/s/hooks/ws
+  Messages  4
+  Cost      $0.00
+  Continue  cline --id 0000000000003_00000

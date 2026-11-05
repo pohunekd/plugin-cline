@@ -1,0 +1,40 @@
+
+ ❯ after clear
+
+ * Reply after clear.
+
+ * Forked into new session 0000000000003_00000. This is now the active session. Use /history to switch sessions.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Ask anything...
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ stub-model (10) $0.00                                                                               ○ Plan ● Act (Tab)
+ ws (main)
+ ▶▶ Auto-approve all enabled (Shift+Tab)

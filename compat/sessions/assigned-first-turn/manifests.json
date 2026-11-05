@@ -1,0 +1,63 @@
+[
+  {
+    "version": 1,
+    "session_id": "c0ffee00-0000-4000-8000-000000000001",
+    "source": "cli",
+    "started_at": "2026-11-05T23:42:01.482Z",
+    "exit_code": null,
+    "status": "idle",
+    "interactive": true,
+    "provider": "openai-compatible",
+    "model": "stub-model",
+    "cwd": "/capture-root____/s/hooks/ws",
+    "workspace_root": "/capture-root____/s/hooks/ws",
+    "team_name": "team-xzogr",
+    "enable_tools": true,
+    "enable_spawn": true,
+    "enable_teams": true,
+    "prompt": "<user_input mode=\"act\">first turn</user_input>",
+    "metadata": {
+      "sessionHistoryOrigin": {
+        "mode": "user",
+        "version": "3.0.74"
+      },
+      "git": {
+        "branch": "main"
+      },
+      "checkpoint": {
+        "latest": {
+          "ref": "0000000000000000000000000000000000000001",
+          "createdAt": 1793922123769,
+          "runCount": 1,
+          "kind": "commit"
+        },
+        "history": [
+          {
+            "ref": "0000000000000000000000000000000000000001",
+            "createdAt": 1793922123769,
+            "runCount": 1,
+            "kind": "commit"
+          }
+        ]
+      },
+      "title": "first turn",
+      "totalCost": 0,
+      "aggregatedAgentsCost": 0,
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "totalCost": 0
+      },
+      "aggregateUsage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "totalCost": 0
+      }
+    },
+    "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/c0ffee00-0000-4000-8000-000000000001.messages.json"
+  }
+]

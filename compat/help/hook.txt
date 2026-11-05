@@ -1,0 +1,6 @@
+Usage: cline hook [options]
+
+Handle a hook payload from stdin
+
+Options:
+  -h, --help  display help for command

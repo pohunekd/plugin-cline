@@ -1,0 +1,19 @@
+Usage: cline skill [options] [args...]
+
+Manage Cline Skills via the open skills CLI (npx skills)
+
+Arguments:
+  args        arguments forwarded to the skills CLI
+
+Options:
+  -h, --help  display help for command
+
+Forwards to the open skills CLI via npx. Examples:
+  cline skill add <owner/repo>       Add a skill into Cline
+  cline skill install <owner/repo>   Alias for add
+  cline skill list                   List installed skills
+  cline skill remove                 Remove installed skills
+  cline skill uninstall              Alias for remove
+
+add/install and remove/uninstall default to '--agent cline' unless you pass your own --agent.
+Run 'npx skills --help' for the full command reference.

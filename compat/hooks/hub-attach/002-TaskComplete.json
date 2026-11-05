@@ -1,0 +1,78 @@
+{
+  "event": "TaskComplete",
+  "env_names": [
+    "CAPTURE_PROBE",
+    "CLINE_BUILD_ENV",
+    "CLINE_CONNECTOR_CLI_LAUNCH",
+    "CLINE_DATA_DIR",
+    "CLINE_DIR",
+    "CLINE_DISABLE_CLINE_PASS_NOTICE",
+    "CLINE_HUB_DISCOVERY_PATH",
+    "CLINE_HUB_PORT",
+    "CLINE_NO_AUTO_UPDATE",
+    "CLINE_NO_INTERACTIVE",
+    "CLINE_WRAPPER_PATH",
+    "HOME",
+    "LANG",
+    "LOGNAME",
+    "NODE_EXTRA_CA_CERTS",
+    "PATH",
+    "PWD",
+    "SHLVL",
+    "TERM",
+    "TMPDIR",
+    "USER"
+  ],
+  "env_values": {
+    "CAPTURE_PROBE": "probe-value",
+    "CLINE_BUILD_ENV": "production",
+    "CLINE_CONNECTOR_CLI_LAUNCH": "<154 chars>",
+    "CLINE_DATA_DIR": "/capture-root____/s/hub-attach/fakehome/.cline/data",
+    "CLINE_DIR": "/capture-root____/s/hub-attach/fakehome/.cline",
+    "CLINE_DISABLE_CLINE_PASS_NOTICE": "1",
+    "CLINE_HUB_DISCOVERY_PATH": "/capture-root____/s/hub-attach/hub/discovery.json",
+    "CLINE_HUB_PORT": "27463",
+    "CLINE_NO_AUTO_UPDATE": "1",
+    "CLINE_NO_INTERACTIVE": "1",
+    "CLINE_WRAPPER_PATH": "/capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/cline"
+  },
+  "ancestors": [
+    {
+      "comm": ".cline",
+      "args": "/capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/.cline --cline-hub-daemon --cwd /capture-root____/s/hub-attach/ws --host 127.0.0.1 --port 27463 --pathname /hub"
+    },
+    {
+      "comm": "bash",
+      "args": "<232 chars>"
+    }
+  ],
+  "payload": {
+    "clineVersion": "",
+    "timestamp": "2026-11-05T23:45:37.660Z",
+    "taskId": "conv_0000000000026_0000000",
+    "sessionContext": {
+      "rootSessionId": "0000000000007_00000"
+    },
+    "workspaceRoots": [
+      "/capture-root____/s/hub-attach/ws"
+    ],
+    "workspaceInfo": {
+      "rootPath": "/capture-root____/s/hub-attach/ws",
+      "hint": "ws",
+      "latestGitCommitHash": "0000000000000000000000000000000000000001",
+      "latestGitBranchName": "main"
+    },
+    "userId": "capture",
+    "agent_id": "agent_00000000-0000-4000-8000-000000000023",
+    "parent_agent_id": null,
+    "hookName": "agent_end",
+    "iteration": 1,
+    "turn": {
+      "outputText": "Hub turn reply.",
+      "status": "completed"
+    },
+    "taskComplete": {
+      "taskMetadata": {}
+    }
+  }
+}

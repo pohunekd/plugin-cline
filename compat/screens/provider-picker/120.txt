@@ -1,0 +1,36 @@
+
+
+
+
+                                                           @@
+                                                         @@@@@@
+                                                    @@@@@@@@@@@@@@@@
+                                                  @@@@@@@@@@@@@@@@@@@@
+                                                 @@@@@@@@@@@@@@@@@@@@@@
+                                                 @@@@@    @@@@    @@@@@
+                                               @@@@@@     *@@@     @@@@@@
+                                               @@@@@@     *@@@     @@@@@@
+                                                 @@@@@    @@@@.   @@@@@
+                                                 @@@@@@@@@@@@@@@@@@@@@@
+                                                  @@@@@@@@@@@@@@@@@@@@
+                                                    @@@@@@@@@@@@@@@@.
+
+                          Choose a provider
+
+                          ╭──────────────────────────────────────────────────────────────────╮
+                          │ Search providers...                                              │
+                          ╰──────────────────────────────────────────────────────────────────╯
+
+                           Popular
+                           ❯ Cline Usage-Billing (OAuth)
+                             ClinePass (OAuth)
+                             OpenAI ChatGPT Subscription (OAuth)
+                             DeepSeek
+                             Anthropic
+                             OpenRouter
+                             Ollama
+                             AWS Bedrock
+                           ▼ 228 more
+
+                          Type to search, ↑/↓ navigate, Enter to select, Esc to go back,
+                          Ctrl+C to exit

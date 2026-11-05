@@ -1,0 +1,5 @@
+release=3.0.74
+old_release=3.0.73
+cline.integrity=sha512-pCaRaJ6Jx50Urej+BYjpGkpZnFbPDCPsibKEbIjEuVxETXbZ/A1SMij8Thy8FobercevXX6hV7joAzU7OG5lzA==
+@cline/cli-linux-x64.integrity=sha512-Em6BmcqAnwV/UXjdaQY7abeECNzq9O1NjQ7N5a/dOQQpVQlP1S04qmP/xOxgWBh0eS5Mln3z6y3m++DBcYYn3Q==
+@cline/cli-linux-x64.bin.sha256=80ee64f82f895ccc695b95acd18252e00f17186a308257d7b169d444a2b27ef4

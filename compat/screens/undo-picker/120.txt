@@ -1,0 +1,40 @@
+
+ ❯ first turn
+
+ * Nothing changed yet.
+
+ ❯ change the files
+
+ * run_commands(echo changed > README.md && echo new > added.txt)
+   ⎿
+
+ * Files changed.
+
+
+
+
+
+
+                      Restore to Checkpoint
+
+                         first turn   just now
+                       ❯ change the files   just now
+
+                      ↑/↓ navigate, Enter to select, Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Ask anything...
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ stub-model (10) $0.00                                                                               ○ Plan ● Act (Tab)
+ ws (main) | 1 file +1 -1
+ ▶▶ Auto-approve all enabled (Shift+Tab)
