@@ -6,12 +6,13 @@
 #
 # Everything (daemon, workers, Cline, the model stub) runs in user, network,
 # mount, UTS and PID namespaces: only a loopback interface, a private process
-# tree that ends with the run, an empty tmpfs over the operator's ~/.cline,
-# and a HOME, CLINE_DIR, hub port and hub discovery path below --root. No
-# credential, login or real model is involved: the turns go to
-# `scripts/model-stub` on the loopback with a placeholder key. The operator's
-# daemon and Cline hub are unreachable from the namespace and are never
-# touched.
+# tree that ends with the run, empty tmpfs mounts over the operator's ~/.cline
+# and over the pohunek directory of the host runtime dir (the daemon's
+# pathname sockets are not scoped to a network namespace), and a HOME,
+# CLINE_DIR, hub port and hub discovery path below --root. No credential,
+# login or real model is involved: the turns go to `scripts/model-stub` on the
+# loopback with a placeholder key. The operator's daemon and Cline hub are
+# unreachable from the namespace and are never touched.
 #
 #   scripts/smoke --root DIR --core-bin DIR --cline-prefix DIR
 #
@@ -119,7 +120,8 @@ if [[ "${SMOKE_STAGE:-host}" == host ]]; then
   # Hub daemons of other installations (the operator's own) must survive.
   before_hubs="$(pgrep -f -- '--cline-hub-daemon' | sort | tr '\n' ' ' || true)"
   rc=0
-  SMOKE_STAGE=outer SMOKE_HOST_HOME="$HOME" SMOKE_UID="$(id -u)" SMOKE_GID="$(id -g)" \
+  SMOKE_STAGE=outer SMOKE_HOST_HOME="$HOME" SMOKE_HOST_RUNTIME="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
+    SMOKE_UID="$(id -u)" SMOKE_GID="$(id -g)" \
     unshare --user --map-root-user --net --mount --uts --pid --fork --kill-child \
     bash "${BASH_SOURCE[0]}" --root "$ROOT" --core-bin "$(cd "$CORE_BIN" && pwd -P)" \
     --cline-prefix "$ROOT/prefix" || rc=$?
@@ -139,6 +141,12 @@ if [[ "$SMOKE_STAGE" == outer ]]; then
   # can read or write it even through a default path.
   if [[ -d "$SMOKE_HOST_HOME/.cline" ]]; then
     mount -t tmpfs -o size=1m,mode=0700 tmpfs "$SMOKE_HOST_HOME/.cline"
+  fi
+  # The operator's daemon socket lives below the host runtime dir, which the
+  # mount namespace still shows and the inner user namespace maps back to the
+  # same uid.
+  if [[ -d "$SMOKE_HOST_RUNTIME/pohunek" ]]; then
+    mount -t tmpfs -o size=1m,mode=0700 tmpfs "$SMOKE_HOST_RUNTIME/pohunek"
   fi
   SMOKE_STAGE=inner exec unshare --user --map-user="$SMOKE_UID" --map-group="$SMOKE_GID" \
     bash "${BASH_SOURCE[0]}" --root "$ROOT" --core-bin "$CORE_BIN" --cline-prefix "$CLINE_PREFIX"
@@ -222,9 +230,14 @@ assert_isolated() {
     [[ "$(stat -f -c %T "$SMOKE_HOST_HOME/.cline")" == tmpfs && -z "$(ls -A "$SMOKE_HOST_HOME/.cline")" ]] ||
       die "the operator's Cline home is not covered inside the namespace"
   fi
+  if [[ -d "$SMOKE_HOST_RUNTIME/pohunek" ]]; then
+    [[ "$(stat -f -c %T "$SMOKE_HOST_RUNTIME/pohunek")" == tmpfs && -z "$(ls -A "$SMOKE_HOST_RUNTIME/pohunek")" ]] ||
+      die "the operator's pohunek runtime directory is not covered inside the namespace"
+  fi
+  [[ ! -S "$SMOKE_HOST_RUNTIME/pohunek/daemon.sock" ]] || die "the operator's daemon socket is visible inside the namespace"
 }
 assert_isolated
-log "namespace: loopback only, private process tree, operator's Cline home covered"
+log "namespace: loopback only, private process tree, operator's Cline home and daemon runtime dir covered"
 
 wait_for() { # <description> <command...>
   local what="$1" i

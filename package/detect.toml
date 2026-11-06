@@ -17,51 +17,51 @@ cmdline = [
   '^(\S*/)?node (\S*/)?bin/cline($| )',
 ]
 
-# Dialogs. A dialog that replaces the composer draws no horizontal rule, so
-# the rules below that name no composer-bearing dialog skip a screen with a
-# rule line: a transcript that quotes a dialog phrase sits above the composer
-# between two rules and stays unblocked.
+# Dialogs that replace the composer read `after_last_horizontal_rule`: the text
+# below the last full-width rule. With the composer drawn that is only the
+# footer, so a transcript that quotes a dialog phrase stays unblocked, and a
+# dialog draws no rule below its own buttons. Text the model controls (the
+# command in the approval box, the question and its options) can carry a line
+# of U+2500 characters; the rules therefore match the static text at the
+# bottom of the dialog, below anything the model prints, and fail closed.
 
-# `Cline needs permission` / `Approve tool call?` / `[y] Approve   [n] Deny`.
-# The `Thinking...` line shows at the same time, so this outranks working.
+# `Cline needs permission` / `Approve tool call?` / the command / the buttons
+# `[y] Approve   [n] Deny`. The buttons sit below the command, so a rule line
+# in the command (compat/screens/approval-rule-line) does not hide them. The
+# `Thinking...` line shows at the same time, so this outranks working.
 [[rules]]
 id = "approval"
 state = "blocked"
 priority = 980
-region = "whole_recent"
+region = "after_last_horizontal_rule"
 visible_blocker = true
-regex = ['Cline\s+needs\s+permission']
-all = [
-  { any = [
-    { regex = ['Approve\s+tool\s+call'] },
-    { regex = ['\[y\]'] },
-    { regex = ['\[n\]'] },
-  ] },
+regex = [
+  '\[y\]',
+  '\[n\]',
+  'Approve',
 ]
-not = { line_regex = ['^\s*\x{2500}{4,}\s*$'] }
 
-# `Cline is asking a question` / options / `Type a response...`.
+# `Cline is asking a question` / question / options, ending with the static
+# entry `Type a response...`, which the model cannot change.
 [[rules]]
 id = "question"
 state = "blocked"
 priority = 980
-region = "whole_recent"
+region = "after_last_horizontal_rule"
 visible_blocker = true
-regex = ['Cline\s+is\s+asking\s+a\s+question']
-not = { line_regex = ['^\s*\x{2500}{4,}\s*$'] }
+regex = ['Type\s+a\s+response']
 
 # `Welcome to Cline` / `Connect a model provider to get started.`
 [[rules]]
 id = "onboarding"
 state = "blocked"
 priority = 980
-region = "whole_recent"
+region = "after_last_horizontal_rule"
 visible_blocker = true
 any = [
   { regex = ['Welcome\s+to\s+Cline'] },
   { regex = ['Connect\s+a\s+model\s+provider'] },
 ]
-not = { line_regex = ['^\s*\x{2500}{4,}\s*$'] }
 
 # `Choose a provider` and `Set model ID` are captured; `Choose a model` is
 # unverified (source only).
@@ -69,14 +69,13 @@ not = { line_regex = ['^\s*\x{2500}{4,}\s*$'] }
 id = "provider_picker"
 state = "blocked"
 priority = 980
-region = "whole_recent"
+region = "after_last_horizontal_rule"
 visible_blocker = true
 any = [
   { regex = ['Choose\s+a\s+provider'] },
   { regex = ['Choose\s+a\s+model'] },
   { regex = ['Set\s+model\s+ID'] },
 ]
-not = { line_regex = ['^\s*\x{2500}{4,}\s*$'] }
 
 # `Signing in with <label>`, `Waiting for sign-in...` are captured; `Your
 # code:` (device-code screen) is unverified (source only).
@@ -84,27 +83,25 @@ not = { line_regex = ['^\s*\x{2500}{4,}\s*$'] }
 id = "oauth_wait"
 state = "blocked"
 priority = 980
-region = "whole_recent"
+region = "after_last_horizontal_rule"
 visible_blocker = true
 any = [
   { regex = ['Signing\s+in\s+with'] },
   { regex = ['Waiting\s+for\s+sign-in'] },
   { regex = ['Your\s+code:'] },
 ]
-not = { line_regex = ['^\s*\x{2500}{4,}\s*$'] }
 
 # API-key form: `Tab to switch fields, Enter to save, Esc to go back`.
 [[rules]]
 id = "api_key_form"
 state = "blocked"
 priority = 980
-region = "whole_recent"
+region = "after_last_horizontal_rule"
 visible_blocker = true
 any = [
   { regex = ['Enter\s+to\s+save'] },
   { regex = ['Paste\s+your\s+API\s+key'] },
 ]
-not = { line_regex = ['^\s*\x{2500}{4,}\s*$'] }
 
 # One-time promo modals. The composer stays drawn behind the modal, so the
 # footer is paired with the modal title.
@@ -123,7 +120,8 @@ all = [
 ]
 
 # `Cline Hub update required` and `Cline Hub was updated`: unverified, source
-# only (no capture shows them).
+# only (no capture shows them, so whether the composer stays drawn behind them
+# is unknown); the whole screen is read so the dialog blocks either way.
 [[rules]]
 id = "hub_dialog"
 state = "blocked"
@@ -134,7 +132,6 @@ any = [
   { regex = ['Cline\s+Hub\s+update\s+required'] },
   { regex = ['Cline\s+Hub\s+was\s+updated'] },
 ]
-not = { line_regex = ['^\s*\x{2500}{4,}\s*$'] }
 
 # `/fork` confirm: `Create a fork of the current conversation?` /
 # `Y/Enter to confirm, N/Esc to cancel`. The composer stays drawn.
@@ -162,15 +159,28 @@ all = [
   { regex = ['Enter\s+to\s+resume'] },
 ]
 
+# `/undo`: the checkpoint list ends with `Enter to select, Esc to cancel`, the
+# restore choice with `Enter to confirm, Esc to cancel`.
 [[rules]]
 id = "undo_picker"
 state = "blocked"
 priority = 980
 region = "whole_recent"
 visible_blocker = true
-any = [
-  { regex = ['Restore\s+to\s+Checkpoint'] },
-  { regex = ['Restore\s+chat\s+only'] },
+regex = [
+  'Restore\s+to\s+Checkpoint',
+  'Enter\s+to\s+select',
+]
+
+[[rules]]
+id = "undo_confirm"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+regex = [
+  'Restore\s+chat\s+only',
+  'Enter\s+to\s+confirm',
 ]
 
 # A running turn: `⠇ Thinking... (esc to cancel)` before the first content,

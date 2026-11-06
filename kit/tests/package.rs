@@ -237,6 +237,7 @@ fn case_table() -> BTreeMap<&'static str, Option<AgentActivity>> {
     let blocked = [
         "api-key-form",
         "approval",
+        "approval-rule-line",
         "fork-confirm",
         "history-picker",
         "model-step",
@@ -395,7 +396,7 @@ fn rule_sources() -> Vec<(String, String)> {
 /// the rules that match no capture.
 fn rule_table() -> BTreeMap<&'static str, Vec<&'static str>> {
     BTreeMap::from([
-        ("approval", vec!["approval"]),
+        ("approval", vec!["approval", "approval-rule-line"]),
         ("question", vec!["question"]),
         ("onboarding", vec!["onboarding", "onboarding-byo-selected"]),
         (
@@ -421,12 +422,17 @@ fn rule_table() -> BTreeMap<&'static str, Vec<&'static str>> {
         ("hub_dialog", vec![]),
         ("fork_confirm", vec!["fork-confirm"]),
         ("history_picker", vec!["history-picker"]),
-        ("undo_picker", vec!["undo-confirm", "undo-picker"]),
-        ("working_thinking", vec!["approval", "working-thinking"]),
+        ("undo_picker", vec!["undo-picker"]),
+        ("undo_confirm", vec!["undo-confirm"]),
+        (
+            "working_thinking",
+            vec!["approval", "approval-rule-line", "working-thinking"],
+        ),
         (
             "working_spinner_row",
             vec![
                 "approval",
+                "approval-rule-line",
                 "question",
                 "signin-chatgpt",
                 "signin-chatgpt-after",
@@ -508,6 +514,52 @@ fn prose_that_quotes_a_dialog_above_the_composer_is_not_blocked() {
         "Choose a provider\nSigning in with Cline\nEnter to save, Esc to go back",
     ] {
         let text = format!(" \u{276f} explain this\n\n * {quoted}\n\n{composer}");
+        assert_eq!(
+            screen_activity(definition.manifest(), &text, 80),
+            Some(Idle),
+            "{quoted:?}"
+        );
+    }
+}
+
+#[test]
+fn a_rule_line_in_the_proposed_command_does_not_hide_the_approval_box() {
+    let definition = installed_definition();
+    let rule = "\u{2500}".repeat(20);
+    let text = format!(
+        " \u{276f} run a command\n\n \u{280b} Thinking... (esc to cancel)\n\n Cline needs permission\n\n Approve tool call?\n\n run_commands\n\n   $ cat > NOTES.md <<'EOF'\nTitle\n{rule}\nEOF\n\n  [y] Approve   [n] Deny\n\n stub-model (10) $0.00\n ws (main)\n Auto-approve all disabled (Shift+Tab)\n"
+    );
+    assert_eq!(
+        screen_activity(definition.manifest(), &text, 80),
+        Some(Blocked)
+    );
+}
+
+#[test]
+fn a_rule_line_in_a_question_does_not_hide_the_question_picker() {
+    let definition = installed_definition();
+    let rule = "\u{2500}".repeat(20);
+    let text = format!(
+        " \u{280b} ask_question(Which?)\n\n Cline is asking a question\n\n {rule}\n\n  > {rule}\n    Blue\n    Type a response...\n\n stub-model (10) $0.00\n Auto-approve all disabled (Shift+Tab)\n"
+    );
+    assert_eq!(
+        screen_activity(definition.manifest(), &text, 80),
+        Some(Blocked)
+    );
+}
+
+#[test]
+fn a_single_phrase_of_a_picker_above_the_composer_is_not_blocked() {
+    let definition = installed_definition();
+    let rule = "\u{2500}".repeat(40);
+    let composer = format!("{rule}\n\u{276f} Ask anything...\n{rule}\n");
+    for quoted in [
+        "pick Restore chat only to keep your files",
+        "Restore to Checkpoint",
+        "Session History",
+        "Create a fork of the current conversation?",
+    ] {
+        let text = format!(" * {quoted}\n\n{composer}");
         assert_eq!(
             screen_activity(definition.manifest(), &text, 80),
             Some(Idle),

@@ -184,7 +184,7 @@ What the package does:
 ## Checks
 
 ```bash
-(cd kit && cargo test --locked)   # descriptor, version, process trees, screens, rule by rule
+(cd kit && cargo test --locked)   # descriptor, version, process trees, screens, rule by rule, rule-line and quoting cases
 ```
 
 `kit/` pins the core revision it is proven against (`kit/Cargo.toml`, the same
@@ -199,7 +199,7 @@ the whole manifest reads each scenario as the state in the last column
 
 | Rule | State | Matches (own) |
 |---|---|---|
-| `approval` | blocked | `approval` |
+| `approval` | blocked | `approval`, `approval-rule-line` |
 | `question` | blocked | `question` |
 | `onboarding` | blocked | `onboarding`, `onboarding-byo-selected` |
 | `provider_picker` | blocked | `provider-picker`, `provider-picker-search`, `model-step` |
@@ -209,9 +209,10 @@ the whole manifest reads each scenario as the state in the last column
 | `hub_dialog` | blocked | none (unverified, source only) |
 | `fork_confirm` | blocked | `fork-confirm` |
 | `history_picker` | blocked | `history-picker` |
-| `undo_picker` | blocked | `undo-picker`, `undo-confirm` |
-| `working_thinking` | working | `working-thinking`, `approval` |
-| `working_spinner_row` | working | `working-thinking`, `working-tool-row`, `approval`, `question`, `signin-chatgpt`, `signin-chatgpt-after` |
+| `undo_picker` | blocked | `undo-picker` |
+| `undo_confirm` | blocked | `undo-confirm` |
+| `working_thinking` | working | `working-thinking`, `approval`, `approval-rule-line` |
+| `working_spinner_row` | working | `working-thinking`, `working-tool-row`, `approval`, `approval-rule-line`, `question`, `signin-chatgpt`, `signin-chatgpt-after` |
 | `idle_composer` | idle | every screen that draws the composer, also behind promo, fork and picker dialogs and during a turn |
 
 The approval box and the question picker also show a spinner row, and the
@@ -221,13 +222,22 @@ Whole-manifest result: all `Blocked` scenarios above read blocked, `idle-*`,
 `hub-*`, `promo-suppressed-*`, `promo-launch-3`, `question-answered`,
 `approval-*` (after the answer), `cancel-escape-*`, `history-switched` and
 `undo-done` read idle, `working-*` read working, and the exit summaries read
-nothing. The dialog rules that name no composer (`approval`, `question`,
-`onboarding`, `provider_picker`, `oauth_wait`, `api_key_form`, `hub_dialog`)
-skip a screen that has a horizontal rule, so a transcript that quotes their
-phrases above the composer stays unblocked (checked). `promo_modal`,
-`fork_confirm`, `history_picker` and `undo_picker` have the composer drawn
-behind them and no such guard; a transcript that quotes both of a rule's
-phrases would read blocked.
+nothing. The dialogs that replace the composer (`approval`, `question`, `onboarding`,
+`provider_picker`, `oauth_wait`, `api_key_form`) read the text below the last
+full-width rule line. With the composer drawn that is only the footer, so a
+transcript that quotes their phrases stays unblocked (checked). The approval
+box prints the proposed command raw and the question picker prints the model's
+options, so either can carry a line of `─`; `approval` therefore matches its
+buttons (`[y]`, `[n]`, `Approve`) and `question` its static last entry
+(`Type a response...`), both below anything the model prints, and fail closed
+(`compat/screens/approval-rule-line`: a multi-line stub command with such a
+line; the kit tests also cover a question with rule lines). Before this, a
+rule-line guard turned the approval rule off on such a screen.
+`promo_modal`, `fork_confirm`, `history_picker`, `undo_picker` and
+`undo_confirm` have the composer drawn behind them, so they read the whole
+screen and pair a title with the dialog's own footer; a transcript that
+quotes both of a rule's phrases would read blocked. `hub_dialog` (unverified)
+reads the whole screen too.
 
 ### Definition of done and the smoke run
 
@@ -245,8 +255,10 @@ scripts/smoke --root /path/to/smoke-root --core-bin /path/to/core/target/debug \
 
 Isolation (asserted by the script before anything starts): user, network,
 mount, UTS and PID namespaces with only a loopback interface and a private
-process tree that ends with the run; an empty tmpfs over the operator's
-`~/.cline`; 127.0.0.1:25463 unreachable; a HOME, `CLINE_DIR`,
+process tree that ends with the run; empty tmpfs mounts over the operator's
+`~/.cline` and over the `pohunek/` directory of the host runtime dir (the
+daemon's pathname sockets are not scoped to a network namespace; the script
+asserts the host daemon socket is not visible); 127.0.0.1:25463 unreachable; a HOME, `CLINE_DIR`,
 `CLINE_DATA_DIR`, hub port (27463) and hub discovery path below `--root`;
 every command through `env -i`, so no `POHUNEK_*` reaches the daemon, Cline or
 the CLI. The sessions carry `CLINE_SANDBOX=1` and `CLINE_SANDBOX_DATA_DIR`
