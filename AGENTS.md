@@ -38,8 +38,9 @@ the epic #1; this repository's issues are P0-P5.
   records it.
 - **Docs in the same PR** as the behaviour they describe.
 - **Testing policy.** Minimal tests: only for non-trivial logic and regressions
-  in it. CI runs shellcheck, the stub syntax check and the capture dry run
-  (redaction and stub self tests); the CLI itself is not run in CI. No coverage
+  in it. CI runs shellcheck, the stub syntax check, the capture dry run
+  (redaction and stub self tests) and the `package` job (`kit/` tests against
+  core and the committed screens); the CLI itself is not run in CI. No coverage
   targets.
 - **PR bodies** use `Refs #N` only, never a closing keyword. No `Co-Authored-By`
   trailer, no generated-by footer.
@@ -54,6 +55,7 @@ scripts/capture --root <dir> --dry-run all        # plan, tool check, self tests
 scripts/capture --root <dir> all                  # fetch the release and capture everything
 scripts/capture --root <dir> --release X.Y.Z all  # capture a newer release
 scripts/capture --root <dir> hooks errors         # single steps (after install)
+(cd kit && cargo test --locked)                   # package/ against core and compat/screens
 ```
 
 `--root` must not be inside the repository's `compat/` (the kit refuses it);

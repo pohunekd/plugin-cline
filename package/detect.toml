@@ -1,0 +1,201 @@
+# Cline CLI activity manifest.
+#
+# Screens come from Cline 3.0.74 (compat/screens). Phrases that no capture
+# shows are marked `unverified`. Cline emits no OSC status record and no BEL;
+# its title carries the prompt text, not a state (compat/terminal/), so every
+# rule reads the screen.
+
+# The npm wrapper is a Node script that spawns the binary: the PTY root is
+# `node` (comm `node-MainThread`) and its child is the binary, comm `cline`
+# (`.cline` with the postinstall cache; compat/install/process-*.txt). The
+# hub daemon (`cline --cline-hub-daemon`) and plugin workers carry the same
+# comm; they are not distinguishable by name.
+[process]
+comm = ['^\.?cline$']
+cmdline = [
+  '^(\S*/)?\.?cline($| )',
+  '^(\S*/)?node (\S*/)?bin/cline($| )',
+]
+
+# Dialogs. A dialog that replaces the composer draws no horizontal rule, so
+# the rules below that name no composer-bearing dialog skip a screen with a
+# rule line: a transcript that quotes a dialog phrase sits above the composer
+# between two rules and stays unblocked.
+
+# `Cline needs permission` / `Approve tool call?` / `[y] Approve   [n] Deny`.
+# The `Thinking...` line shows at the same time, so this outranks working.
+[[rules]]
+id = "approval"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+regex = ['Cline\s+needs\s+permission']
+all = [
+  { any = [
+    { regex = ['Approve\s+tool\s+call'] },
+    { regex = ['\[y\]'] },
+    { regex = ['\[n\]'] },
+  ] },
+]
+not = { line_regex = ['^\s*\x{2500}{4,}\s*$'] }
+
+# `Cline is asking a question` / options / `Type a response...`.
+[[rules]]
+id = "question"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+regex = ['Cline\s+is\s+asking\s+a\s+question']
+not = { line_regex = ['^\s*\x{2500}{4,}\s*$'] }
+
+# `Welcome to Cline` / `Connect a model provider to get started.`
+[[rules]]
+id = "onboarding"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+any = [
+  { regex = ['Welcome\s+to\s+Cline'] },
+  { regex = ['Connect\s+a\s+model\s+provider'] },
+]
+not = { line_regex = ['^\s*\x{2500}{4,}\s*$'] }
+
+# `Choose a provider` and `Set model ID` are captured; `Choose a model` is
+# unverified (source only).
+[[rules]]
+id = "provider_picker"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+any = [
+  { regex = ['Choose\s+a\s+provider'] },
+  { regex = ['Choose\s+a\s+model'] },
+  { regex = ['Set\s+model\s+ID'] },
+]
+not = { line_regex = ['^\s*\x{2500}{4,}\s*$'] }
+
+# `Signing in with <label>`, `Waiting for sign-in...` are captured; `Your
+# code:` (device-code screen) is unverified (source only).
+[[rules]]
+id = "oauth_wait"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+any = [
+  { regex = ['Signing\s+in\s+with'] },
+  { regex = ['Waiting\s+for\s+sign-in'] },
+  { regex = ['Your\s+code:'] },
+]
+not = { line_regex = ['^\s*\x{2500}{4,}\s*$'] }
+
+# API-key form: `Tab to switch fields, Enter to save, Esc to go back`.
+[[rules]]
+id = "api_key_form"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+any = [
+  { regex = ['Enter\s+to\s+save'] },
+  { regex = ['Paste\s+your\s+API\s+key'] },
+]
+not = { line_regex = ['^\s*\x{2500}{4,}\s*$'] }
+
+# One-time promo modals. The composer stays drawn behind the modal, so the
+# footer is paired with the modal title.
+[[rules]]
+id = "promo_modal"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+regex = ['Press\s+Enter\s+to\s+open']
+all = [
+  { any = [
+    { regex = ['Try\s+ClinePass'] },
+    { regex = ['Cline\s+Desktop'] },
+  ] },
+]
+
+# `Cline Hub update required` and `Cline Hub was updated`: unverified, source
+# only (no capture shows them).
+[[rules]]
+id = "hub_dialog"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+any = [
+  { regex = ['Cline\s+Hub\s+update\s+required'] },
+  { regex = ['Cline\s+Hub\s+was\s+updated'] },
+]
+not = { line_regex = ['^\s*\x{2500}{4,}\s*$'] }
+
+# `/fork` confirm: `Create a fork of the current conversation?` /
+# `Y/Enter to confirm, N/Esc to cancel`. The composer stays drawn.
+[[rules]]
+id = "fork_confirm"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+regex = ['Create\s+a\s+fork\s+of\s+the\s+current']
+all = [
+  { regex = ['Esc\s+to\s+cancel'] },
+]
+
+# `/history` and `/undo` pickers; Enter resumes or restores the highlighted
+# entry. The composer stays drawn.
+[[rules]]
+id = "history_picker"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+regex = ['Session\s+History']
+all = [
+  { regex = ['Enter\s+to\s+resume'] },
+]
+
+[[rules]]
+id = "undo_picker"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+any = [
+  { regex = ['Restore\s+to\s+Checkpoint'] },
+  { regex = ['Restore\s+chat\s+only'] },
+]
+
+# A running turn: `⠇ Thinking... (esc to cancel)` before the first content,
+# then a spinner-led tool row, `⠧ run_commands(sleep 8)`. Finished rows lead
+# with `*`. The composer stays drawn during a turn, so these outrank
+# `idle_composer`; a dialog (priority 980) outranks them.
+[[rules]]
+id = "working_thinking"
+state = "working"
+priority = 960
+region = "whole_recent"
+line_regex = ['^\s*[\x{2801}-\x{28FF}]\s+Thinking\.\.\.']
+
+[[rules]]
+id = "working_spinner_row"
+state = "working"
+priority = 960
+region = "whole_recent"
+line_regex = ['^\s*[\x{2801}-\x{28FF}]\s+\S']
+
+# The composer is the prompt box body between the two rule lines: `❯ What can
+# I do for you?` (home), `❯ Ask anything...` (chat).
+[[rules]]
+id = "idle_composer"
+state = "idle"
+priority = 950
+region = "prompt_box_body"
+line_regex = ['^\s*\x{276F}']

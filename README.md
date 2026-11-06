@@ -9,7 +9,7 @@ terminal coding agent.
 | Package id | `pohunek.runtime.cline` |
 | Runtime id (`--agent`) | `cline` |
 | Upstream | Cline CLI by Cline Bot Inc. (Apache-2.0), npm package `cline` |
-| Status | **P0, evidence only**: the capture kit and the Cline 3.0.74 corpus (Linux x86_64). No runtime package yet; the descriptor is P1 |
+| Status | **P1, descriptor**: `package/` (launch, status, identity, resume) for Cline 3.0.74 on Linux x86_64, proven against the P0 corpus. Hub routing is not controlled until P2, so the package is not admitted to the plugin index yet |
 
 The plugin carries data and evidence only (descriptor, detect rules, captures).
 Handlers, reporters and parsers stay in the core repository
@@ -20,6 +20,8 @@ and the issues P0-P5 of this repository.
 
 | Path | Content |
 |---|---|
+| `package/` | The runtime package: `runtime.toml` (launch contract) and `detect.toml` (process and screen rules) |
+| `kit/` | Stand-in for the plugin kit: a test crate that builds the package twice, installs it through core's definition path, reads the captured version banner and process trees, and runs the detection manifest on every screen of `compat/screens`, as a whole and rule by rule |
 | `scripts/capture` | Capture kit (bash): fetches a release from the npm registry, checks its integrity, runs Cline in throwaway homes inside loopback-only namespaces and records what it shows, which hooks it runs and what it stores |
 | `scripts/model-stub` | Loopback OpenAI-compatible chat-completions stub (Python standard library): scripted text, tool calls and HTTP errors |
 | `scripts/hook-log` | Cline file hook that logs one hook call: payload, environment names, `CLINE_*`/`CAPTURE_*` values, ancestor processes |
@@ -103,6 +105,135 @@ recorded in `compat/RELEASE` must still match the registry's integrity.
 macOS is not supported by this kit yet: `scripts/capture` refuses any
 platform but Linux (it has no `sandbox-exec` isolation path). The macOS arm64
 capture needs that path first and lands as `compat/macos-arm64/`.
+
+## Install and use
+
+The plugin is not in the plugin index yet. Install it from a checkout:
+
+```bash
+cargo xtask package build /path/to/plugin-cline/package --output cline.tar.zst   # in zajca/pohunek
+pohunek plugin install ./cline.tar.zst --sha256 sha256:<digest> --yes
+pohunek plugin enable pohunek.runtime.cline
+pohunek plugin select pohunek.runtime.cline
+pohunek session new --agent cline
+```
+
+or, for development, `pohunek plugin link package --yes` followed by `enable` and
+`select`. Cline itself is installed by its own channel (`npm install -g cline`)
+and must be on the daemon's `PATH`; configure a provider once (`cline`) before a
+session can do work.
+
+What the package does:
+
+- Launches `cline` with `CLINE_NO_AUTO_UPDATE=1` (otherwise an npm install
+  updates itself at exit) and `CLINE_DISABLE_CLINE_PASS_NOTICE=1` (no promo
+  modal takes the first key of the initial input; three launches on one data
+  root showed none, `compat/screens/promo-suppressed-*`). It passes no prompt
+  argument: the initial input is typed into the composer once it is drawn.
+- Accepts Cline `3.0.74` up to, not including, `4.0.0`.
+- Passes a core-generated id as `cline --id <uuid>` and resumes with the same
+  flag. An unknown id starts a session under exactly that id; a known id
+  resumes it.
+- Refuses input while a dialog shows (`refuse_while_blocked`).
+- Reads the screen only: Cline emits no OSC status record, and its title
+  carries the prompt text (`compat/terminal/`).
+
+## Limits
+
+- **Hub routing (known Phase 1 limit).** In its default mode Cline attaches to
+  a running Cline hub, or starts one that outlives the session
+  (`compat/hub/`). With a hub running, `--id <unknown uuid>` fails with
+  `Unknown session`, so a launch can fail, and tools and hooks of a hub-hosted
+  session run outside the session's process tree. The package keeps this
+  uncontrolled until P2 and is not admitted to the index before it.
+- **Development recipe.** A host profile over `cline` with `[env]`
+  `CLINE_SANDBOX = "1"` and `CLINE_SANDBOX_DATA_DIR = "<absolute data root>"`
+  keeps the session in the TUI process and the user's store
+  (`compat/hub/sandbox-*.txt` show the local routing and no hub daemon). The
+  path is host-specific, so it cannot be a package default. These variables
+  relocate the store without `--data-dir`, which the descriptor's recovery
+  check cannot see (it reads `CLINE_DATA_DIR`); that case is unverified.
+- **Cline 4.x is refused.** `version_probe` requires an upper bound, so the
+  open-ended range `>=3.0.74` cannot be declared. `below = "4.0.0"` stands in
+  until zajca/pohunek#1963; a 3.x release newer than 3.0.74 is accepted without
+  a capture.
+- **Approvals.** Cline's own approval setting applies; Pohunek adds no
+  `--auto-approve` argument. A fresh Cline shows `Auto-approve all enabled`
+  (`compat/screens/idle-chat/`), so by default Cline runs every tool without
+  asking, and Pohunek does not change that. Shift+Tab inside a session toggles
+  the setting; that it persists globally is a research measurement not in
+  `compat/` (unverified here).
+- **Typed text answers an approval.** Enter alone, `ok` and `yes please` all run
+  the pending tool; only `n` rejects (`compat/screens/approval-*`). The
+  descriptor therefore refuses session input while the approval box shows; the
+  operator answers through `pohunek attach`.
+- **Telemetry.** Cline has no environment opt-out. Telemetry is controlled by
+  the user's Cline settings: `"telemetryOptOut": true` in
+  `<data root>/settings/global-settings.json` (kept across a start,
+  `compat/install/settings-after-start.json`). `cline --telemetry-selfcheck`
+  still reports `enabled: true` with it set, and what would be sent is
+  unverified (`compat/install/telemetry-selfcheck.txt`). The package does not
+  write this file.
+- **Fork is unsupported**; the assigned reference goes stale after `/clear`,
+  `/fork` and an in-TUI `/history` switch (the next turn's hooks carry the new
+  id, `compat/hooks/assigned-*`), and nothing follows it until P2.
+- **Process matching.** The hub daemon and plugin workers share comm `cline`
+  with the agent; the process rules cannot tell them apart.
+
+## Checks
+
+```bash
+(cd kit && cargo test --locked)   # descriptor, version, process trees, screens, rule by rule
+```
+
+`kit/` pins the core revision it is proven against (`kit/Cargo.toml`, the same
+as plugin-muse-code) and the Rust toolchain of that revision
+(`kit/rust-toolchain.toml`). Move both together with a new core release.
+
+### Detect rules against the corpus
+
+Each rule alone matches exactly these scenarios at every captured width, and
+the whole manifest reads each scenario as the state in the last column
+(`kit/tests/package.rs`). Priorities: dialogs 980, working 960, idle 950.
+
+| Rule | State | Matches (own) |
+|---|---|---|
+| `approval` | blocked | `approval` |
+| `question` | blocked | `question` |
+| `onboarding` | blocked | `onboarding`, `onboarding-byo-selected` |
+| `provider_picker` | blocked | `provider-picker`, `provider-picker-search`, `model-step` |
+| `oauth_wait` | blocked | `signin-chatgpt`, `signin-chatgpt-after`, `signin-cline`, `signin-cline-after`, `signin-clinepass`, `signin-clinepass-after` |
+| `api_key_form` | blocked | `api-key-form` |
+| `promo_modal` | blocked | `promo`, `promo-launch-1`, `promo-launch-2` |
+| `hub_dialog` | blocked | none (unverified, source only) |
+| `fork_confirm` | blocked | `fork-confirm` |
+| `history_picker` | blocked | `history-picker` |
+| `undo_picker` | blocked | `undo-picker`, `undo-confirm` |
+| `working_thinking` | working | `working-thinking`, `approval` |
+| `working_spinner_row` | working | `working-thinking`, `working-tool-row`, `approval`, `question`, `signin-chatgpt`, `signin-chatgpt-after` |
+| `idle_composer` | idle | every screen that draws the composer, also behind promo, fork and picker dialogs and during a turn |
+
+The approval box and the question picker also show a spinner row, and the
+sign-in wait shows a spinner, so the blocked rules outrank the working rules.
+Whole-manifest result: all `Blocked` scenarios above read blocked, `idle-*`,
+`turn-done`, `error`, `resume`, `clear`, `forked`, `subagent`, `team`,
+`hub-*`, `promo-suppressed-*`, `promo-launch-3`, `question-answered`,
+`approval-*` (after the answer), `cancel-escape-*`, `history-switched` and
+`undo-done` read idle, `working-*` read working, and the exit summaries read
+nothing. The dialog rules that name no composer (`approval`, `question`,
+`onboarding`, `provider_picker`, `oauth_wait`, `api_key_form`, `hub_dialog`)
+skip a screen that has a horizontal rule, so a transcript that quotes their
+phrases above the composer stays unblocked (checked). `promo_modal`,
+`fork_confirm`, `history_picker` and `undo_picker` have the composer drawn
+behind them and no such guard; a transcript that quotes both of a rule's
+phrases would read blocked.
+
+### Definition of done
+
+D1 (lint, double build, `verify`, `detect-check` on the P0 corpus) is covered by
+the kit tests above. D2 to D6 need a running Cline in an isolated root with the
+stub (a smoke script); that script does not exist yet, and nothing in this
+change launched Cline, so they are **unverified**.
 
 ## Verified behaviour (Cline 3.0.74, Linux x86_64)
 
@@ -190,6 +321,15 @@ schedules it after `start()` has run that turn). NDJSON in
 
 ## Unverified
 
+- **D2 to D6 of the descriptor** (`smoke`: idle in an isolated root, initial
+  input, a stub turn, blocked on approval with plain text refused, resume of a
+  stopped session and recovery refusing a missing `<id>/<id>.json`): no smoke
+  script yet. The existence check's declaration is asserted against core's
+  definition and the `<id>/<id>.json` layout is in
+  `compat/sessions/*/tree.txt`; core's check was not run.
+- **`submit_delay_ms = 500`**: the capture kit's pause between typed text and
+  Enter; a shorter delay is untested.
+- **Cline 3.0.75 and later 3.x**: accepted by the version range, never captured.
 - **macOS**: everything; the manager's capture lands as `compat/macos-arm64/`.
 - **Arch package** (`cline-cli`): the host package is 3.0.73, so the `arch`
   step recorded nothing; its layout under the release is unverified.

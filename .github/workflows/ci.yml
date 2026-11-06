@@ -44,3 +44,19 @@ jobs:
             echo "credential or home path in compat/" >&2
             exit 1
           fi
+
+  package:
+    # Stand-in for the pohunek plugin kit (lint, double build, detect-check): it
+    # loads `package/` through the daemon crate of the core release named in
+    # kit/Cargo.toml.
+    name: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Toolchain
+        # The channel in kit/rust-toolchain.toml is the pin of the core rev.
+        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' kit/rust-toolchain.toml)" --profile minimal
+      - name: kit tests
+        working-directory: kit
+        run: cargo test --locked

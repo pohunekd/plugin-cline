@@ -1,0 +1,4 @@
+# Same pin as zajca/pohunek at the rev kit/Cargo.toml names.
+[toolchain]
+channel = "1.99.0"
+profile = "minimal"
