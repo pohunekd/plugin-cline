@@ -1,0 +1,24 @@
+
+ ❯ ask me something
+
+ ⠏ ask_question(Which of the following options should the assistant choose f...
+   )
+
+
+
+ Cline is asking a question
+
+ Which of the following options should the assistant choose for the next step █
+ of the plan? Consider the trade-offs carefully, including cost, risk, effort █
+ and maintenance over time. Consider the trade-offs carefully, including cost,█
+ risk, effort and maintenance over time. Consider the trade-offs carefully,   █
+ including cost, risk, effort and maintenance over time. Consider the trade-  █
+ offs carefully, including cost, risk, effort and maintenance over time.
+
+  > Opt 1
+    Opt 2
+
+
+ stub-model (10) $0.00                                       ○ Plan ● Act (Tab)
+ ws (main)
+ Auto-approve all disabled (Shift+Tab)

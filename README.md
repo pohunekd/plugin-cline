@@ -200,19 +200,19 @@ the whole manifest reads each scenario as the state in the last column
 | Rule | State | Matches (own) |
 |---|---|---|
 | `approval` | blocked | `approval`, `approval-rule-line` |
-| `question` | blocked | `question` |
+| `question` | blocked | `question`, `question-clipped` |
 | `onboarding` | blocked | `onboarding`, `onboarding-byo-selected` |
 | `provider_picker` | blocked | `provider-picker`, `provider-picker-search`, `model-step` |
 | `oauth_wait` | blocked | `signin-chatgpt`, `signin-chatgpt-after`, `signin-cline`, `signin-cline-after`, `signin-clinepass`, `signin-clinepass-after` |
 | `api_key_form` | blocked | `api-key-form` |
 | `promo_modal` | blocked | `promo`, `promo-launch-1`, `promo-launch-2` |
-| `hub_dialog` | blocked | none (unverified, source only) |
+| `hub_dialog` | blocked | none (unverified, source only; also needs `Press Enter to update`) |
 | `fork_confirm` | blocked | `fork-confirm` |
 | `history_picker` | blocked | `history-picker` |
 | `undo_picker` | blocked | `undo-picker` |
 | `undo_confirm` | blocked | `undo-confirm` |
 | `working_thinking` | working | `working-thinking`, `approval`, `approval-rule-line` |
-| `working_spinner_row` | working | `working-thinking`, `working-tool-row`, `approval`, `approval-rule-line`, `question`, `signin-chatgpt`, `signin-chatgpt-after` |
+| `working_spinner_row` | working | `working-thinking`, `working-tool-row`, `approval`, `approval-rule-line`, `question`, `question-clipped`, `signin-chatgpt`, `signin-chatgpt-after` |
 | `idle_composer` | idle | every screen that draws the composer, also behind promo, fork and picker dialogs and during a turn |
 
 The approval box and the question picker also show a spinner row, and the
@@ -224,20 +224,32 @@ Whole-manifest result: all `Blocked` scenarios above read blocked, `idle-*`,
 `undo-done` read idle, `working-*` read working, and the exit summaries read
 nothing. The dialogs that replace the composer (`approval`, `question`, `onboarding`,
 `provider_picker`, `oauth_wait`, `api_key_form`) read the text below the last
-full-width rule line. With the composer drawn that is only the footer, so a
-transcript that quotes their phrases stays unblocked (checked). The approval
-box prints the proposed command raw and the question picker prints the model's
-options, so either can carry a line of `─`; `approval` therefore matches its
-buttons (`[y]`, `[n]`, `Approve`) and `question` its static last entry
-(`Type a response...`), both below anything the model prints, and fail closed
-(`compat/screens/approval-rule-line`: a multi-line stub command with such a
-line; the kit tests also cover a question with rule lines). Before this, a
-rule-line guard turned the approval rule off on such a screen.
+horizontal-rule line (a line made of `─`, or one led by at least three of
+them). With the composer drawn that is only the footer, so a transcript that
+quotes their phrases stays unblocked (checked). The approval box prints the
+proposed command raw and the question picker prints the model's text, so
+either can carry such a line:
+
+- `approval` matches its buttons (`[y]`, `[n]`, `Approve`), which sit below
+  the command and stay visible when a taller command is clipped
+  (`compat/screens/approval-rule-line`, at 120x40 and at 80x24 with a command
+  taller than the box). A rule line in the command does not hide it.
+- `question` matches the title `Cline is asking a question` or the last entry
+  `Type a response...`. The entry scrolls out of view when the list is taller
+  than the picker (`compat/screens/question-clipped`, 80x24, a long question
+  and 5 options), and it turns into the typed text; the title is always
+  drawn. **Residual case (not closed, no capture):** a rule line in the
+  question text moves the region below the title, and together with a clipped
+  list neither phrase is in the region, so the question reads `working` and
+  `refuse_while_blocked` does not apply. Closing it needs a core matcher for
+  "no composer on screen".
+
 `promo_modal`, `fork_confirm`, `history_picker`, `undo_picker` and
 `undo_confirm` have the composer drawn behind them, so they read the whole
 screen and pair a title with the dialog's own footer; a transcript that
 quotes both of a rule's phrases would read blocked. `hub_dialog` (unverified)
-reads the whole screen too.
+also reads the whole screen and pairs a title with `Press Enter to update`,
+which the short toast of the same title lacks (source only).
 
 ### Definition of done and the smoke run
 

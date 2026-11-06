@@ -41,15 +41,22 @@ regex = [
   'Approve',
 ]
 
-# `Cline is asking a question` / question / options, ending with the static
-# entry `Type a response...`, which the model cannot change.
+# `Cline is asking a question` / question / options, ending with the entry
+# `Type a response...`. The title is always drawn; the entry is the last row of
+# a fixed-height list and scrolls out of view when there are many options (at
+# 80x24, compat/screens/question-clipped), and it turns into the typed text. A
+# line of `─` in the question text moves the region start below the title, so
+# a rule line together with a clipped list is not matched (README, Limits).
 [[rules]]
 id = "question"
 state = "blocked"
 priority = 980
 region = "after_last_horizontal_rule"
 visible_blocker = true
-regex = ['Type\s+a\s+response']
+any = [
+  { regex = ['Cline\s+is\s+asking\s+a\s+question'] },
+  { regex = ['Type\s+a\s+response'] },
+]
 
 # `Welcome to Cline` / `Connect a model provider to get started.`
 [[rules]]
@@ -121,13 +128,16 @@ all = [
 
 # `Cline Hub update required` and `Cline Hub was updated`: unverified, source
 # only (no capture shows them, so whether the composer stays drawn behind them
-# is unknown); the whole screen is read so the dialog blocks either way.
+# is unknown); the whole screen is read so the dialog blocks either way. Both
+# end with `Press Enter to update`, which the 1.8 s toast of the same title
+# lacks.
 [[rules]]
 id = "hub_dialog"
 state = "blocked"
 priority = 980
 region = "whole_recent"
 visible_blocker = true
+regex = ['Press\s+Enter\s+to\s+update']
 any = [
   { regex = ['Cline\s+Hub\s+update\s+required'] },
   { regex = ['Cline\s+Hub\s+was\s+updated'] },

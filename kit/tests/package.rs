@@ -249,6 +249,7 @@ fn case_table() -> BTreeMap<&'static str, Option<AgentActivity>> {
         "provider-picker",
         "provider-picker-search",
         "question",
+        "question-clipped",
         "signin-chatgpt",
         "signin-chatgpt-after",
         "signin-cline",
@@ -397,7 +398,7 @@ fn rule_sources() -> Vec<(String, String)> {
 fn rule_table() -> BTreeMap<&'static str, Vec<&'static str>> {
     BTreeMap::from([
         ("approval", vec!["approval", "approval-rule-line"]),
-        ("question", vec!["question"]),
+        ("question", vec!["question", "question-clipped"]),
         ("onboarding", vec!["onboarding", "onboarding-byo-selected"]),
         (
             "provider_picker",
@@ -434,6 +435,7 @@ fn rule_table() -> BTreeMap<&'static str, Vec<&'static str>> {
                 "approval",
                 "approval-rule-line",
                 "question",
+                "question-clipped",
                 "signin-chatgpt",
                 "signin-chatgpt-after",
                 "working-thinking",
@@ -564,6 +566,27 @@ fn a_single_phrase_of_a_picker_above_the_composer_is_not_blocked() {
             screen_activity(definition.manifest(), &text, 80),
             Some(Idle),
             "{quoted:?}"
+        );
+    }
+}
+
+#[test]
+fn a_hub_dialog_blocks_but_the_toast_of_the_same_title_does_not() {
+    let definition = installed_definition();
+    let rule = "\u{2500}".repeat(40);
+    let composer = format!("{rule}\n\u{276f} Ask anything...\n{rule}\n footer\n");
+    for title in ["Cline Hub was updated", "Cline Hub update required"] {
+        let dialog = format!(" {title}\n\n Press Enter to update\n\n{composer}");
+        assert_eq!(
+            screen_activity(definition.manifest(), &dialog, 80),
+            Some(Blocked),
+            "{title}"
+        );
+        let toast = format!(" The shared {title} (core 1). Run 'cline update'.\n\n{composer}");
+        assert_eq!(
+            screen_activity(definition.manifest(), &toast, 80),
+            Some(Idle),
+            "{title} toast"
         );
     }
 }

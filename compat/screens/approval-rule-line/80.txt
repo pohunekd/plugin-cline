@@ -1,0 +1,24 @@
+
+ ❯ run a command
+
+ ⠋ Thinking... (esc to cancel)
+
+
+
+
+
+
+
+
+ Cline needs permission
+ Approve tool call?
+ run_commands
+   $ cat > NOTES.md <<'EOF'
+ Title
+
+
+  [y] Approve   [n] Deny
+
+ stub-model (10) $0.00                                       ○ Plan ● Act (Tab)
+ ws (main)
+ Auto-approve all disabled (Shift+Tab)

@@ -14,6 +14,7 @@ approval-approved	120	captured
 approval-enter	120	captured
 approval-n	120	captured
 approval-ok	120	captured
+approval-rule-line	80	captured
 approval-rule-line	120	captured
 approval-text	120	captured
 cancel-ctrl-c-stream	120	captured
@@ -82,6 +83,7 @@ question	120	captured
 question	160	captured
 question	200	captured
 question-answered	120	captured
+question-clipped	80	captured
 resume	120	captured
 signin-chatgpt	120	captured
 signin-chatgpt-after	120	captured

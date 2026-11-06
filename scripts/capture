@@ -1066,6 +1066,12 @@ step_turn() {
 # screen_has_rule_line: the visible screen holds a line made of U+2500 only.
 screen_has_rule_line() { pty_screen | grep -Eq '^ *─{10,} *$'; }
 
+# screen_has_buttons: the approval box shows its buttons.
+screen_has_buttons() { pty_screen | grep -q '\[y\] Approve'; }
+
+# screen_lacks_custom_entry: the question picker's last entry is not visible.
+screen_lacks_custom_entry() { ! pty_screen | grep -q 'Type a response'; }
+
 # Approval (auto-approve off), question picker and fork confirm screens.
 step_dialogs() {
   local w
@@ -1174,6 +1180,55 @@ step_dialogs() {
   fi
   pty_quit
   pty_stop
+  # The same at 80x24 (the default size of a Pohunek session) with a command
+  # taller than the approval box, and a question with more options than the
+  # question picker has rows. The buttons must stay visible; the last picker
+  # entry is expected to scroll out of view.
+  local saved_height="$HEIGHT" tall_cmd i
+  HEIGHT=24
+  tall_cmd=$'cat > NOTES.md <<\'EOF\'\nTitle'
+  for i in 1 2 3 4 5 6; do
+    tall_cmd+=$'\nline '"$i"
+  done
+  tall_cmd+=$'\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500'
+  for i in 7 8 9 10; do
+    tall_cmd+=$'\nline '"$i"
+  done
+  tall_cmd+=$'\nEOF'
+  stub_start approval-rule-line-24 "$(jq -nc --arg c "$tall_cmd" '[
+    {tool: "run_commands", args: {commands: [$c]}},
+    {text: "Understood."}]')"
+  prepare_scn approval-rule-line-24
+  pty_start approval-rule-line-24 80 --auto-approve false
+  if need "approval-rule-line-24: composer" pty_idle; then
+    pty_submit 'run a command'
+    if need "approval-rule-line-24: the approval box" pty_wait 'Cline needs permission' 20; then
+      sleep 1
+      need "approval-rule-line-24: the buttons stay visible" screen_has_buttons || true
+      snap approval-rule-line 80 'Cline needs permission' 10
+    fi
+  fi
+  pty_quit
+  pty_stop
+  # A long question wraps over many rows, so the list below it is clipped.
+  local long_question
+  long_question="Which of the following options should the assistant choose for the next step of the plan? $(printf 'Consider the trade-offs carefully, including cost, risk, effort and maintenance over time. %.0s' 1 2 3 4)"
+  stub_start question-clipped "$(jq -nc --arg q "$long_question" '[
+    {tool: "ask_question", args: {question: $q, options: ["Opt 1", "Opt 2", "Opt 3", "Opt 4", "Opt 5"]}},
+    {text: "Thanks."}]')"
+  prepare_scn question-clipped
+  pty_start question-clipped 80 --auto-approve false
+  if need "question-clipped: composer" pty_idle; then
+    pty_submit 'ask me something'
+    if need "question-clipped: the question picker" pty_wait 'Cline is asking a question' 20; then
+      sleep 1
+      need "question-clipped: the last entry is out of view" screen_lacks_custom_entry || true
+      snap question-clipped 80 'Cline is asking a question' 10
+    fi
+  fi
+  pty_quit
+  pty_stop
+  HEIGHT="$saved_height"
   stub_stop
   assert_no_hub dialogs
 }
@@ -1747,7 +1802,7 @@ step_owned() {
     onboarding) echo "screens/onboarding screens/onboarding-byo-selected screens/provider-picker screens/provider-picker-search screens/api-key-form screens/model-step screens/signin-cline screens/signin-cline-after screens/signin-clinepass screens/signin-clinepass-after screens/signin-chatgpt screens/signin-chatgpt-after screens/signin-opened-urls.txt" ;;
     promo) echo "screens/promo screens/promo-launch-1 screens/promo-launch-2 screens/promo-launch-3 screens/promo-notices-state.json screens/promo-suppressed screens/promo-suppressed-launch-1 screens/promo-suppressed-launch-2 screens/promo-suppressed-launch-3 screens/promo-suppressed-state.txt" ;;
     turn) echo "install/process-sandbox-tui.txt screens/idle-home screens/idle-chat screens/working-thinking screens/working-tool-row screens/turn-done screens/exit-summary terminal stub/turn-requests.jsonl" ;;
-    dialogs) echo "screens/approval screens/approval-approved screens/question screens/question-answered screens/fork-confirm screens/approval-n screens/approval-text screens/approval-rule-line" ;;
+    dialogs) echo "screens/approval screens/approval-approved screens/question screens/question-answered screens/fork-confirm screens/approval-n screens/approval-text screens/approval-rule-line screens/question-clipped" ;;
     hooks) echo "hooks/assigned-first-turn hooks/assigned-subagent hooks/assigned-clear-switch hooks/assigned-after-clear hooks/assigned-fork-switch hooks/assigned-after-fork hooks/assigned-quit hooks/assigned-resume hooks/generated-id sessions/assigned-first-turn sessions/assigned-subagent sessions/assigned-after-fork sessions/assigned-resume sessions/generated-id screens/subagent screens/clear screens/forked screens/exit-summary-assigned screens/resume stub/hooks-requests.jsonl" ;;
     errors) echo "hooks/error-400 hooks/cancel-escape-stream hooks/cancel-escape-tool hooks/cancel-escape-subagent hooks/cancel-ctrl-c-stream hooks/headless-timeout headless sessions/error-400 sessions/cancel-escape-stream sessions/cancel-escape-tool sessions/cancel-escape-subagent sessions/cancel-ctrl-c-stream screens/error screens/cancel-escape-stream screens/cancel-escape-tool screens/cancel-escape-subagent screens/cancel-ctrl-c-stream stub/error-400-requests.jsonl" ;;
     team) echo "hooks/team sessions/team screens/team stub/team-requests.jsonl" ;;
