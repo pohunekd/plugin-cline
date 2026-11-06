@@ -10,7 +10,10 @@ approval	80	captured
 approval	120	captured
 approval	160	captured
 approval	200	captured
+approval-approved	120	captured
+approval-enter	120	captured
 approval-n	120	captured
+approval-ok	120	captured
 approval-text	120	captured
 cancel-ctrl-c-stream	120	captured
 cancel-escape-stream	120	captured
@@ -18,6 +21,7 @@ cancel-escape-subagent	120	captured
 cancel-escape-tool	120	captured
 clear	120	captured
 error	120	captured
+exit-summary	120	captured
 exit-summary-assigned	120	captured
 fork-confirm	20	captured
 fork-confirm	40	captured
@@ -50,6 +54,7 @@ onboarding	80	captured
 onboarding	120	captured
 onboarding	160	captured
 onboarding	200	captured
+onboarding-byo-selected	120	captured
 promo	20	captured
 promo	40	captured
 promo	80	captured
@@ -68,12 +73,14 @@ provider-picker	80	captured
 provider-picker	120	captured
 provider-picker	160	captured
 provider-picker	200	captured
+provider-picker-search	120	captured
 question	20	captured
 question	40	captured
 question	80	captured
 question	120	captured
 question	160	captured
 question	200	captured
+question-answered	120	captured
 resume	120	captured
 signin-chatgpt	120	captured
 signin-chatgpt-after	120	captured
@@ -83,6 +90,7 @@ signin-clinepass	120	captured
 signin-clinepass-after	120	captured
 subagent	120	captured
 team	120	captured
+turn-done	120	captured
 undo-confirm	120	captured
 undo-done	120	captured
 undo-picker	120	captured

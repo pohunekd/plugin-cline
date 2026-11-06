@@ -71,7 +71,7 @@
   ],
   "payload": {
     "clineVersion": "",
-    "timestamp": "2026-11-05T23:43:17.113Z",
+    "timestamp": "2026-11-06T00:17:36.545Z",
     "taskId": "conv_0000000000011_0000000",
     "sessionContext": {
       "rootSessionId": "c0ffee00-0000-4000-8000-000000000001"
@@ -106,9 +106,9 @@
           "outputTokens": 0
         }
       },
-      "durationMs": 2111,
-      "startedAt": "2026-11-05T23:43:14.998Z",
-      "endedAt": "2026-11-05T23:43:17.109Z"
+      "durationMs": 2100,
+      "startedAt": "2026-11-06T00:17:34.443Z",
+      "endedAt": "2026-11-06T00:17:36.543Z"
     },
     "postToolUse": {
       "toolName": "spawn_agent",
@@ -118,7 +118,7 @@
       },
       "result": "<94 chars>",
       "success": true,
-      "executionTimeMs": 2111
+      "executionTimeMs": 2100
     }
   }
 }

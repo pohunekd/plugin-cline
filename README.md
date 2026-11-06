@@ -26,9 +26,9 @@ and the issues P0-P5 of this repository.
 | `compat/RELEASE` | The release every capture comes from: version, npm integrity of both packages, binary sha256, the older release the hub step runs beside it |
 | `compat/install/` | `--version`, npm layout, postinstall cache, process trees, settings after a start, telemetry self check |
 | `compat/help/` | `--help` of every command |
-| `compat/screens/<scenario>/<width>.txt` | Terminal screens; `INDEX.tsv` lists each scenario and width as captured or missed, and a missed one keeps the screen that showed instead as `<width>.unmatched.txt` |
+| `compat/screens/<scenario>/<width>.txt` | Terminal screens; `INDEX.tsv` lists each scenario and width |
 | `compat/terminal/` | Terminal titles, OSC kinds, DEC modes, BEL count, the startup bytes |
-| `compat/hooks/<scenario>/` | One JSON file per hook call, numbered in call order, and `SUMMARY.tsv` (event, hookName, rootSessionId, agent ids, ancestor comms) |
+| `compat/hooks/<scenario>/` | One JSON file per hook call, numbered in arrival order, and `SUMMARY.tsv` (event, hookName, rootSessionId, agent ids, ancestor comms). Hooks of concurrent agents can arrive in either order: a subagent's `TaskComplete` and its parent's `PostToolUse` are swapped between this capture and the previous one |
 | `compat/sessions/<scenario>/` | The `sessions` table (JSON columns parsed), team tables with rows, session manifests, the envelope of every messages file, the store tree |
 | `compat/hub/` | Hub daemon process trees, runtime routing lines of the CLI log, hub start and stop output |
 | `compat/headless/` | NDJSON of a `--json` run |
@@ -44,7 +44,8 @@ and the issues P0-P5 of this repository.
   over HTTPS). Every other step runs in user, network, mount, UTS and PID
   namespaces: only a loopback interface, the root bound to
   `/run/capture-root`, a synthetic passwd that names the caller `capture`,
-  host name `capture`. Every process of the run, a hub daemon included, ends
+  host name `capture`, and an empty tmpfs over the operator's `~/.cline`
+  (checked inside). Every process of the run, a hub daemon included, ends
   with the namespace.
 - **Per scenario** the CLI gets a cleared environment (`env -i`) with its own
   `HOME`, `CLINE_DIR`, `CLINE_DATA_DIR`, `TMPDIR`, `CLINE_HUB_PORT` (27463 inside
@@ -63,14 +64,21 @@ and the issues P0-P5 of this repository.
   `"autoUpdateEnabled": false`, and the namespace has no route out.
 - **Evidence.** The capture root becomes `/capture-root____` (same width).
   Ids Cline generates (session ids, `conv_*`, UUIDs, git hashes, teammate task
-  suffixes, team names) become stable placeholders of the same shape, so within one run of the
-  kit one id reads the same in every file (the map starts over with each run,
-  so a step re-run on its own numbers its ids afresh); the kit's own assigned ids
+  suffixes, also in the teammate's messages file name, team names) become
+  stable placeholders of the same shape, so within one run of the kit one id
+  reads the same in every file (the map starts over with each run, so a step
+  re-run on its own numbers its ids afresh); the kit's own assigned ids
   (`c0ffee00-...`) stay. `providers.json` and the hub discovery record are
   never copied (only the record's key names). Before a step's files replace
   those in `compat/`, a scan refuses host paths, user and host names (also
   wrapped across rows or shortened), credential-shaped fields, the
   placeholder key and `POHUNEK_`.
+- **Checked evidence.** A screen is saved only after the state it should
+  show matched (the saved text is the text that matched); every scripted
+  reply, hook event and state a step relies on is checked. A step with any
+  miss keeps `compat/` as it was, lists the misses in
+  `<root>/stage/<step>/MISSED.txt`, and the run exits non-zero; screens that
+  showed instead stay under the stage as `<width>.unmatched.txt`.
 
 ## Running the kit
 
@@ -125,7 +133,7 @@ Every row comes from the corpus in `compat/`. "Stub" means against
 | Idle | Home: logo, `What can I do for you?`, composer `❯ What can I do for you?`; chat: `❯ Ask anything...`; footer `<model> (<ctx>) $<cost> ... ○ Plan ● Act (Tab)`, `<cwd> (<branch>)`, `▶▶ Auto-approve all enabled (Shift+Tab)` | `screens/idle-home/`, `screens/idle-chat/` |
 | Working | `⠇ Thinking... (esc to cancel)` above the composer; a running tool row `⠧ run_commands(sleep 8)`; finished rows start with `*`, a rejected one with `x`. **The idle composer stays drawn during a turn** | `screens/working-thinking/`, `screens/working-tool-row/` |
 | Approval | With `--auto-approve false`: `Cline needs permission` / `Approve tool call?` / `run_commands` / `$ <command>` / `[y] Approve   [n] Deny`, footer `Auto-approve all disabled (Shift+Tab)`. The `Thinking...` line shows at the same time | `screens/approval/` |
-| Approval answers | `y` runs the command; `n` rejects it (`Error: This tool call was rejected by the user`); **typing `yes please` and Enter runs the command** (the first `y` approves) | `screens/approval-approved/`, `screens/approval-n/`, `screens/approval-text/` (`effect.txt`) |
+| Approval answers | `y` runs the command; `n` rejects it (`Error: This tool call was rejected by the user`); **Enter alone, `ok` then Enter, and `yes please` then Enter all run the command**. Only `n` rejects among the inputs tried; which key of a typed answer approves is unverified | `screens/approval-approved/`, `screens/approval-n/`, `screens/approval-enter/`, `screens/approval-ok/`, `screens/approval-text/` (`effect.txt` records the input) |
 | Question | `Cline is asking a question` / question / `> Red`, `Blue`, `Green` / `Type a response...`; `1` and Enter answers `Red` | `screens/question/`, `screens/question-answered/` |
 | Fork confirm | `Create a fork of the current conversation?` / `Y/Enter to confirm, N/Esc to cancel`; then `Forked into new session <id>. This is now the active session.` | `screens/fork-confirm/`, `screens/forked/` |
 | History picker | `Session History`, newest first, `↑/↓ navigate, Enter to resume, ← delete, → export, Esc to close` | `screens/history-picker/` |

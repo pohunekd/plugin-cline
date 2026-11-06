@@ -2,8 +2,8 @@
   {
     "session_id": "c0ffee00-0000-4000-8000-000000000001",
     "source": "cli",
-    "started_at": "2026-11-05T23:42:01.482Z",
-    "ended_at": "2026-11-05T23:42:09.503Z",
+    "started_at": "2026-11-06T00:16:24.606Z",
+    "ended_at": "2026-11-06T00:16:31.859Z",
     "exit_code": 0,
     "status": "completed",
     "status_lock": 8,
@@ -12,7 +12,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/hooks/ws",
     "workspace_root": "/capture-root____/s/hooks/ws",
-    "team_name": "team-xzogr",
+    "team_name": "team-00001",
     "enable_tools": 1,
     "enable_spawn": 1,
     "enable_teams": 1,
@@ -33,14 +33,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793922123769,
+          "createdAt": 1793924186893,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793922123769,
+            "createdAt": 1793924186893,
             "runCount": 1,
             "kind": "commit"
           }
@@ -67,13 +67,13 @@
     "transcript_path": "",
     "hook_path": "",
     "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/c0ffee00-0000-4000-8000-000000000001.messages.json",
-    "updated_at": "2026-11-05T23:42:09.503Z"
+    "updated_at": "2026-11-06T00:16:31.859Z"
   },
   {
     "session_id": "c0ffee00-0000-4000-8000-000000000001__agent_00000000-0000-4000-8000-000000000002",
     "source": "cli",
-    "started_at": "2026-11-05T23:42:05.577Z",
-    "ended_at": "2026-11-05T23:42:05.592Z",
+    "started_at": "2026-11-06T00:16:29.139Z",
+    "ended_at": "2026-11-06T00:16:29.187Z",
     "exit_code": 0,
     "status": "completed",
     "status_lock": 7,
@@ -82,7 +82,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/hooks/ws",
     "workspace_root": "/capture-root____/s/hooks/ws",
-    "team_name": "team-xzogr",
+    "team_name": "team-00001",
     "enable_tools": 1,
     "enable_spawn": 1,
     "enable_teams": 1,
@@ -102,13 +102,13 @@
     "transcript_path": "",
     "hook_path": "",
     "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/agent_00000000-0000-4000-8000-000000000002.messages.json",
-    "updated_at": "2026-11-05T23:42:05.592Z"
+    "updated_at": "2026-11-06T00:16:29.187Z"
   },
   {
     "session_id": "0000000000002_00000",
     "source": "cli",
-    "started_at": "2026-11-05T23:42:12.961Z",
-    "ended_at": "2026-11-05T23:42:14.947Z",
+    "started_at": "2026-11-06T00:16:34.024Z",
+    "ended_at": "2026-11-06T00:16:36.017Z",
     "exit_code": 0,
     "status": "completed",
     "status_lock": 5,
@@ -117,7 +117,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/hooks/ws",
     "workspace_root": "/capture-root____/s/hooks/ws",
-    "team_name": "team-00001",
+    "team_name": "team-00003",
     "enable_tools": 1,
     "enable_spawn": 1,
     "enable_teams": 1,
@@ -138,14 +138,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793922133092,
+          "createdAt": 1793924194150,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793922133092,
+            "createdAt": 1793924194150,
             "runCount": 1,
             "kind": "commit"
           }
@@ -172,13 +172,13 @@
     "transcript_path": "",
     "hook_path": "",
     "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/0000000000002_00000/0000000000002_00000.messages.json",
-    "updated_at": "2026-11-05T23:42:14.947Z"
+    "updated_at": "2026-11-06T00:16:36.017Z"
   },
   {
     "session_id": "0000000000003_00000",
     "source": "cli",
-    "started_at": "2026-11-05T23:42:14.958Z",
-    "ended_at": "2026-11-05T23:42:18.910Z",
+    "started_at": "2026-11-06T00:16:36.019Z",
+    "ended_at": "2026-11-06T00:16:39.985Z",
     "exit_code": 0,
     "status": "completed",
     "status_lock": 5,
@@ -187,7 +187,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/hooks/ws",
     "workspace_root": "/capture-root____/s/hooks/ws",
-    "team_name": "team-00002",
+    "team_name": "team-00004",
     "enable_tools": 1,
     "enable_spawn": 1,
     "enable_teams": 1,
@@ -208,14 +208,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793922133092,
+          "createdAt": 1793924194150,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793922133092,
+            "createdAt": 1793924194150,
             "runCount": 1,
             "kind": "commit"
           }
@@ -240,19 +240,19 @@
       },
       "fork": {
         "forkedFromSessionId": "0000000000002_00000",
-        "forkedAt": "2026-11-05T23:42:14.957Z",
+        "forkedAt": "2026-11-06T00:16:36.019Z",
         "source": "cli",
         "checkpoints": {
           "latest": {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793922133092,
+            "createdAt": 1793924194150,
             "runCount": 1,
             "kind": "commit"
           },
           "history": [
             {
               "ref": "0000000000000000000000000000000000000001",
-              "createdAt": 1793922133092,
+              "createdAt": 1793924194150,
               "runCount": 1,
               "kind": "commit"
             }
@@ -263,6 +263,6 @@
     "transcript_path": "",
     "hook_path": "",
     "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/0000000000003_00000/0000000000003_00000.messages.json",
-    "updated_at": "2026-11-05T23:42:18.910Z"
+    "updated_at": "2026-11-06T00:16:39.985Z"
   }
 ]

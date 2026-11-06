@@ -3,8 +3,8 @@
     "version": 1,
     "session_id": "c0ffee00-0000-4000-8000-000000000003",
     "source": "cli",
-    "started_at": "2026-11-05T23:44:40.805Z",
-    "ended_at": "2026-11-05T23:44:49.629Z",
+    "started_at": "2026-11-06T00:18:57.167Z",
+    "ended_at": "2026-11-06T00:19:04.966Z",
     "exit_code": 0,
     "status": "completed",
     "interactive": true,
@@ -12,7 +12,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/undo/ws",
     "workspace_root": "/capture-root____/s/undo/ws",
-    "team_name": "team-00012",
+    "team_name": "team-00017",
     "enable_tools": true,
     "enable_spawn": true,
     "enable_teams": true,
@@ -28,14 +28,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793922283087,
+          "createdAt": 1793924339313,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793922283087,
+            "createdAt": 1793924339313,
             "runCount": 1,
             "kind": "commit"
           }
@@ -65,8 +65,8 @@
     "version": 1,
     "session_id": "0000000000006_00000",
     "source": "cli",
-    "started_at": "2026-11-05T23:44:49.507Z",
-    "ended_at": "2026-11-05T23:44:54.804Z",
+    "started_at": "2026-11-06T00:19:04.851Z",
+    "ended_at": "2026-11-06T00:19:07.664Z",
     "exit_code": 0,
     "status": "completed",
     "interactive": true,
@@ -74,7 +74,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/undo/ws",
     "workspace_root": "/capture-root____/s/undo/ws",
-    "team_name": "team-00013",
+    "team_name": "team-00018",
     "enable_tools": true,
     "enable_spawn": true,
     "enable_teams": true,
@@ -87,14 +87,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793922283087,
+          "createdAt": 1793924339313,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793922283087,
+            "createdAt": 1793924339313,
             "runCount": 1,
             "kind": "commit"
           }

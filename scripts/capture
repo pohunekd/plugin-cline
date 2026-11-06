@@ -241,6 +241,11 @@ redact() {
     $text =~ s{(__teamtask__[A-Za-z0-9_-]+?__)([A-Za-z0-9_-]{6})(?![A-Za-z0-9_-])}{
       $1 . ph("teamtask", $2, sub { sprintf("%06d", $_[0]) })
     }ge;
+    # The teammate messages file (<agent>__<suffix>.messages.json) carries the
+    # same suffix as the task id and gets the same placeholder.
+    $text =~ s{((?:^|[/"\s])[A-Za-z0-9_-]+?__)([A-Za-z0-9_-]{6})(\.messages\.json)}{
+      $1 . ph("teamtask", $2, sub { sprintf("%06d", $_[0]) }) . $3
+    }gem;
     $text =~ s{(?<![A-Za-z0-9_-])team-((?=[A-Za-z0-9_-]{0,4}[A-Z0-9])[A-Za-z0-9_-]{5})(?![A-Za-z0-9_-])}{
       "team-" . ph("team", $1, sub { sprintf("%05d", $_[0]) })
     }ge;
@@ -448,9 +453,12 @@ pty_stop() {
   sleep 1
 }
 
-pty_screen() { tm capture-pane -p -t 0; }
-pty_pid() { tm display-message -p -t 0 '#{pane_pid}'; }
-pty_dead() { [[ "$(tm display-message -p -t 0 '#{pane_dead}' 2>/dev/null)" == 1 ]]; }
+# The pane the driver reads and types into (a session name or 0).
+PTY_TARGET=0
+
+pty_screen() { tm capture-pane -p -t "$PTY_TARGET"; }
+pty_pid() { tm display-message -p -t "$PTY_TARGET" '#{pane_pid}'; }
+pty_dead() { [[ "$(tm display-message -p -t "$PTY_TARGET" '#{pane_dead}' 2>/dev/null)" == 1 ]]; }
 
 # pty_wait <extended-regex> [timeout]: waits until the screen matches.
 pty_wait() {
@@ -469,12 +477,12 @@ pty_wait() {
 # settle; input typed into the first frame is lost.
 pty_idle() {
   pty_wait '❯' "${1:-$WAIT_TIMEOUT}" || return 1
-  pty_wait '\(Tab\)' 5 || true
+  pty_wait '\(Tab\)' 5 || return 1
   sleep "$SETTLE"
 }
 
-pty_keys() { tm send-keys -t 0 "$@"; }
-pty_type() { tm send-keys -t 0 -l "$1"; }
+pty_keys() { tm send-keys -t "$PTY_TARGET" "$@"; }
+pty_type() { tm send-keys -t "$PTY_TARGET" -l "$1"; }
 
 # pty_submit <text> [expected-regex]: types the text and submits it. An Enter
 # sent before the composer takes input is dropped, so it is repeated until
@@ -517,7 +525,38 @@ pty_quit() {
 # pty_snap <file>: the redacted visible screen, trailing blank rows trimmed;
 # tmux's own line for an exited pane is dropped.
 pty_snap() {
-  pty_screen | sed -e '/^Pane is dead/d' | sed -e :a -e '/^[[:space:]]*$/{$d;N;ba' -e '}' | emit "$1"
+  pty_screen | snap_text | emit "$1"
+}
+
+snap_text() {
+  sed -e '/^Pane is dead/d' | sed -e :a -e '/^[[:space:]]*$/{$d;N;ba' -e '}'
+}
+
+# MISSES collects every expectation of the current step that did not hold:
+# a screen, a reply, a hook or a state the evidence depends on. A step with
+# any miss keeps its staged files out of compat/ and fails the run.
+MISSES=()
+
+# miss <what>: records an unmet expectation.
+miss() {
+  log "missed: $*"
+  MISSES+=("$*")
+}
+
+# need <what> <command...>: runs the command and records a miss when it
+# fails; returns the command's status.
+need() {
+  local what="$1" rc=0
+  shift
+  "$@" || rc=$?
+  ((rc == 0)) || miss "$what"
+  return "$rc"
+}
+
+# expect <what> <command...>: as need, for a call site that does not branch
+# on the result.
+expect() {
+  need "$@" || return 0
 }
 
 # snap_index <scenario> <width> <captured|missed>: the screen index records
@@ -526,20 +565,34 @@ snap_index() {
   printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$OUT/screens/INDEX.tsv"
 }
 
-# snap_wait <scenario> <width> <regex> [timeout]: waits for the screen and
-# saves it as screens/<scenario>/<width>.txt. On a timeout the screen that
-# showed instead is saved as <width>.unmatched.txt.
+# snap_wait <scenario> <width> <regex> [timeout]: waits until the screen
+# matches the state regex and saves it as screens/<scenario>/<width>.txt.
+# Every screen in compat/ goes through it. On a timeout the screen that showed
+# instead is saved as <width>.unmatched.txt, indexed as missed and recorded as
+# a miss.
 snap_wait() {
   local scn="$1" width="$2" re="$3" limit="${4:-$WAIT_TIMEOUT}"
+  local screen
   if pty_wait "$re" "$limit"; then
     sleep 0.5
-    pty_snap "$OUT/screens/$scn/$width.txt"
-    snap_index "$scn" "$width" captured
-    return 0
+    # The saved screen is the one the regex was checked against.
+    screen="$(pty_screen)"
+    if grep -Eq -- "$re" <<<"$screen"; then
+      printf '%s\n' "$screen" | snap_text | emit "$OUT/screens/$scn/$width.txt"
+      snap_index "$scn" "$width" captured
+      return 0
+    fi
   fi
   pty_snap "$OUT/screens/$scn/$width.unmatched.txt"
   snap_index "$scn" "$width" missed
+  miss "screen $scn at $width: /$re/"
   return 1
+}
+
+# snap <scenario> <width> <regex> [timeout]: as snap_wait, for a call site
+# that does not branch on the result.
+snap() {
+  snap_wait "$@" || return 0
 }
 
 # osc_titles <raw>: terminal title sequences, consecutive duplicates removed.
@@ -630,11 +683,14 @@ wait_hook() {
   return 1
 }
 
-# collect_hooks <scn> <dest>: the redacted hook records, one file per call,
-# numbered in call order; the hook log is emptied.
+# collect_hooks <scn> <dest> [event...]: the redacted hook records, one file
+# per call, numbered in call order, and their SUMMARY.tsv; the hook log is
+# emptied. Each event named must be among the calls, or it is a miss; with no
+# event named any set of calls, none included, is evidence.
 collect_hooks() {
-  local logdir dest="$2" f n=0 event
-  logdir="$(scn_dir "$1")/hooklog"
+  local scn="$1" logdir dest="$2" f n=0 event
+  shift 2
+  logdir="$(scn_dir "$scn")/hooklog"
   sleep 1
   rm -rf "$dest"
   mkdir -p "$dest"
@@ -646,7 +702,10 @@ collect_hooks() {
     emit_json "$(printf '%s/%03d-%s.json' "$dest" "$n" "$event")" <"$f"
     rm -f "$f"
   done
-  ((n > 0)) || log "no hook calls in $1"
+  hook_summary "$dest"
+  for event in "$@"; do
+    compgen -G "$dest/[0-9]*-$event.json" >/dev/null || miss "hook $event in ${dest#"$OUT"/}"
+  done
 }
 
 # hook_summary <dest>: event, hookName, rootSessionId, agent ids and the
@@ -760,12 +819,15 @@ step_version() {
     printf '$ cline version\n'
     "$s/run" version 2>&1
   } | emit "$OUT/install/version.txt"
+  expect "version: --version is not $RELEASE" test "$("$s/run" --version 2>&1)" == "$RELEASE"
   mkdir -p "$OUT/help"
   "$s/run" --help 2>&1 | emit "$OUT/help/cline.txt"
   for c in $("$s/run" --help 2>&1 | awk '/^Commands:/ { on = 1; next } on && /^  [a-z]/ { print $1 } on && /^$/ { exit }' | sed 's/|.*//'); do
     [[ "$c" == help ]] && continue
-    "$s/run" "$c" --help 2>&1 | emit "$OUT/help/$c.txt" || true
+    "$s/run" "$c" --help >"$s/help.txt" 2>&1 || miss "version: $c --help failed"
+    emit "$OUT/help/$c.txt" <"$s/help.txt"
   done
+  expect "version: no subcommand help" compgen -G "$OUT/help/[a-z]*.txt" >/dev/null
   {
     printf 'wrapper package: cline %s (bin: %s)\n' "$(jq -r .version "$w/package.json")" "$(jq -c .bin "$w/package.json")"
     printf 'wrapper scripts: %s\n' "$(jq -c .scripts "$w/package.json")"
@@ -791,8 +853,10 @@ step_version() {
 
   # Settings: the throwaway global-settings.json after a TUI start, and what
   # the telemetry self check reports with telemetryOptOut set.
-  "$s/run" --telemetry-selfcheck 2>&1 | grep -v -i -E 'key|token|secret|header' |
-    emit "$OUT/install/telemetry-selfcheck.txt" || true
+  "$s/run" --telemetry-selfcheck >"$s/selfcheck.txt" 2>&1 || miss "version: --telemetry-selfcheck failed"
+  { grep -v -i -E 'key|token|secret|header' "$s/selfcheck.txt" || true; } |
+    emit "$OUT/install/telemetry-selfcheck.txt"
+  expect "version: empty telemetry self check" test -s "$OUT/install/telemetry-selfcheck.txt"
   jq '{telemetryOptOut, autoUpdateEnabled, toolAutoApprove} | with_entries(select(.value != null))' \
     "$s/fakehome/.cline/data/settings/global-settings.json" | emit "$OUT/install/settings-after-start.json"
   jq -r 'keys[]' "$s/fakehome/.cline/data/settings/global-settings.json" | emit "$OUT/install/settings-keys.txt"
@@ -807,15 +871,16 @@ process_tree_capture() {
     sleep 2
     proc_tree "$(pty_pid)" | emit "$OUT/install/process-$1.txt"
   else
-    log "process tree $1: the TUI did not start"
+    miss "process tree $1: the TUI did not start"
   fi
   pty_stop
 }
 
 # Onboarding without a provider: welcome, provider picker, API-key form and
-# the sign-in screens. No form is ever submitted; sign-in starts inside the
-# namespace, so no request leaves it, and the browser hand-off is the kit's
-# xdg-open logger.
+# the sign-in screens. Sign-in starts inside the namespace, so no request
+# leaves it, and the browser hand-off is the kit's xdg-open logger. Only the
+# OpenAI Compatible form is saved, with the loopback stub and the placeholder
+# key.
 step_onboarding() {
   local w
   stub_start onboarding '[]'
@@ -831,12 +896,12 @@ step_onboarding() {
       sleep 0.3
       pty_keys Down
       sleep 0.3
-      [[ "$w" == "$REF_WIDTH" ]] && pty_snap "$OUT/screens/onboarding-byo-selected/$w.txt"
+      [[ "$w" == "$REF_WIDTH" ]] && snap onboarding-byo-selected "$w" 'Bring your own provider +→' 5
       pty_keys Enter
       if snap_wait provider-picker "$w" 'Choose a provider|Choose a$'; then
         pty_type 'openai compatible'
         sleep 1
-        [[ "$w" == "$REF_WIDTH" ]] && pty_snap "$OUT/screens/provider-picker-search/$w.txt"
+        [[ "$w" == "$REF_WIDTH" ]] && snap provider-picker-search "$w" '❯ OpenAI Compatible' 5
         pty_keys Enter
         if snap_wait api-key-form "$w" 'Enter to save|to save, Esc' 15 && [[ "$w" == "$REF_WIDTH" ]]; then
           onboarding_submit
@@ -850,22 +915,22 @@ step_onboarding() {
   for card in 0 1 2; do
     prepare_scn "${names[card]}" --no-provider
     pty_start "${names[card]}" "$REF_WIDTH"
-    if pty_wait 'Welcome to Cline'; then
+    if need "${names[card]}: onboarding" pty_wait 'Welcome to Cline'; then
       sleep "$SETTLE"
       for ((n = 0; n < card; n++)); do
         pty_keys Down
         sleep 0.3
       done
       pty_keys Enter
-      snap_wait "${names[card]}" "$REF_WIDTH" 'Signing in with' 10 || true
-      # The first answer of the sign-in flow (an error or the wait screen).
+      snap "${names[card]}" "$REF_WIDTH" 'Signing in with' 10
+      # The first answer of the sign-in flow: an error without network, or
+      # the wait screen.
       sleep 4
-      pty_snap "$OUT/screens/${names[card]}-after/$REF_WIDTH.txt"
-      snap_index "${names[card]}-after" "$REF_WIDTH" captured
+      snap "${names[card]}-after" "$REF_WIDTH" 'getaddrinfo|ETIMEOUT|Waiting for sign-in|Your code' 20
     fi
     pty_stop
   done
-  if [[ -s "$ROOT/kit/opened.log" ]]; then
+  if need "the sign-in flow handed no URL to xdg-open" test -s "$ROOT/kit/opened.log"; then
     sed -E 's/([?&](state|code_challenge|nonce)=)[^& ]*/\1<redacted>/g' "$ROOT/kit/opened.log" |
       emit "$OUT/screens/signin-opened-urls.txt"
   fi
@@ -873,9 +938,9 @@ step_onboarding() {
 }
 
 # onboarding_submit: fills the OpenAI Compatible form with the loopback stub
-# and the placeholder key and saves it, which leads to the model step (a model list, or a model id form when the
-# endpoint lists none Cline knows). The
-# base URL field holds the OpenAI default and has the focus.
+# and the placeholder key and saves it, which leads to the model step (a model
+# list, or a model id form). The base URL field holds the OpenAI default and
+# has the focus. The filled form shows the key as typed, so it is not saved.
 onboarding_submit() {
   local n
   for ((n = 0; n < 40; n++)); do
@@ -888,10 +953,8 @@ onboarding_submit() {
   sleep 0.3
   pty_type "$STUB_KEY"
   sleep 0.5
-  # The form shows the key as typed; the evidence scan refuses the
-  # placeholder, so the filled form is kept out of compat/.
   pty_keys Enter
-  snap_wait model-step "$REF_WIDTH" 'Choose a model|Set model ID' 20 || true
+  snap model-step "$REF_WIDTH" 'Choose a model|Set model ID' 20
 }
 
 # One-time promo modals: shown on a launch with a provider unless
@@ -902,35 +965,37 @@ step_promo() {
   for w in "${WIDTHS[@]}"; do
     prepare_scn promo --promo
     pty_start promo "$w"
-    snap_wait promo "$w" 'Press Enter' || true
+    snap promo "$w" 'Press Enter'
     pty_stop
   done
-  # Successive launches on one data root: which modal shows each time.
+  # Successive launches on one data root: which modal shows each time. The
+  # modal draws over the composer, so each launch waits for the composer and
+  # then for the frame to settle before the screen is read.
   prepare_scn promo-seq --promo
   for n in 1 2 3; do
     pty_start promo-seq "$REF_WIDTH"
-    pty_wait 'Press Enter to open|❯' || true
-    sleep 2
-    pty_snap "$OUT/screens/promo-launch-$n/$REF_WIDTH.txt"
-    snap_index "promo-launch-$n" "$REF_WIDTH" captured
+    expect "promo-seq launch $n: composer" pty_wait '❯'
+    sleep 3
+    snap "promo-launch-$n" "$REF_WIDTH" 'Press Enter to open|❯' 5
     # Escape closes a modal without opening anything.
     pty_keys Escape
     sleep 1
     pty_quit
     pty_stop
   done
-  jq '.' "$(scn_dir promo-seq)/fakehome/.cline/data/settings/cli-notices.json" 2>/dev/null |
-    emit "$OUT/screens/promo-notices-state.json" || true
+  if need "promo-seq wrote no cli-notices.json" test -f "$(scn_dir promo-seq)/fakehome/.cline/data/settings/cli-notices.json"; then
+    jq '.' "$(scn_dir promo-seq)/fakehome/.cline/data/settings/cli-notices.json" |
+      emit "$OUT/screens/promo-notices-state.json"
+  fi
   # The suppressing variable: three launches on a fresh data root with it
   # set, as many as the modals above need.
   prepare_scn promo-off
   : >"$(scn_dir promo-off)/modals"
   for n in 1 2 3; do
     pty_start promo-off "$REF_WIDTH"
-    pty_wait 'Press Enter to open|❯' || true
-    sleep 2
-    pty_snap "$OUT/screens/promo-suppressed-launch-$n/$REF_WIDTH.txt"
-    snap_index "promo-suppressed-launch-$n" "$REF_WIDTH" captured
+    expect "promo-off launch $n: composer" pty_wait '❯'
+    sleep 3
+    snap "promo-suppressed-launch-$n" "$REF_WIDTH" 'Press Enter to open|❯' 5
     if pty_screen | grep -q 'Press Enter to open'; then
       printf 'launch %s: modal shown\n' "$n" >>"$(scn_dir promo-off)/modals"
       pty_keys Escape
@@ -961,39 +1026,37 @@ step_turn() {
       {text: "Command done."}]')"
     prepare_scn turn
     pty_start turn "$w"
-    snap_wait idle-home "$w" '❯' || {
+    if ! snap_wait idle-home "$w" '❯'; then
       pty_stop
       continue
-    }
+    fi
     sleep "$SETTLE"
     [[ "$w" == "$REF_WIDTH" ]] && proc_tree "$(pty_pid)" | emit "$OUT/install/process-sandbox-tui.txt"
     pty_submit 'hello there'
-    snap_wait working-thinking "$w" 'Thinking' 10 || true
-    if pty_wait 'Hello from' 20; then
+    snap working-thinking "$w" 'Thinking' 10
+    if need "turn at $w: the stub reply" pty_wait 'Hello from' 20; then
       sleep 1
-      snap_wait idle-chat "$w" '❯' 5 || true
-    else
-      snap_index idle-chat "$w" missed
+      snap idle-chat "$w" '❯' 5
     fi
     pty_submit 'run the long command'
-    snap_wait working-tool-row "$w" 'run_commands' 20 || true
-    pty_wait 'Command done' 30 || true
-    sleep 1
+    snap working-tool-row "$w" 'run_commands' 20
     if [[ "$w" == "$REF_WIDTH" ]]; then
-      pty_snap "$OUT/screens/turn-done/$w.txt"
+      snap turn-done "$w" 'Command done' 30
       raw="$RAW_FILE"
       osc_titles "$raw" | emit "$OUT/terminal/titles.txt"
       osc_kinds "$raw" | emit "$OUT/terminal/osc-kinds.txt"
       head -c 1200 "$raw" | visible | emit "$OUT/terminal/startup-bytes.txt"
-      LC_ALL=C grep -a -o $'\x1b\\[?[0-9;]*[hl]' "$raw" | visible | sort | uniq -c | sort -k2 |
-        emit "$OUT/terminal/dec-modes.txt" || true
+      { LC_ALL=C grep -a -o $'\x1b\\[?[0-9;]*[hl]' "$raw" || true; } | visible | sort | uniq -c | sort -k2 |
+        emit "$OUT/terminal/dec-modes.txt"
       if LC_ALL=C grep -a -q $'\x07' "$raw"; then
         printf 'BEL outside OSC: %s\n' "$(LC_ALL=C tr -cd '\007' <"$raw" | wc -c)"
       fi | emit "$OUT/terminal/bel.txt"
       stub_requests turn "$OUT/stub/turn-requests.jsonl"
+    else
+      expect "turn at $w: the tool reply" pty_wait 'Command done' 30
     fi
     pty_quit
-    [[ "$w" == "$REF_WIDTH" ]] && pty_snap "$OUT/screens/exit-summary/$w.txt"
+    [[ "$w" == "$REF_WIDTH" ]] && snap exit-summary "$w" 'Session Summary' 10
     pty_stop
     assert_no_hub "turn at $w"
   done
@@ -1011,31 +1074,35 @@ step_dialogs() {
       {"text": "Thanks for answering."}]'
     prepare_scn dialogs
     pty_start dialogs "$w" --auto-approve false
-    pty_idle || {
+    if ! need "dialogs at $w: composer" pty_idle; then
       pty_stop
       continue
-    }
+    fi
     pty_submit 'run a command'
     if snap_wait approval "$w" 'Cline needs|Approve tool call' 20; then
       pty_keys y
-      pty_wait 'Command done' 20 || true
-      [[ "$w" == "$REF_WIDTH" ]] && {
-        pty_snap "$OUT/screens/approval-approved/$w.txt"
-        printf 'file created after y: %s\n' \
-          "$([[ -e "$(scn_dir dialogs)/ws/approved-by-capture.txt" ]] && echo yes || echo no)" |
+      if [[ "$w" == "$REF_WIDTH" ]]; then
+        snap_wait approval-approved "$w" 'Command done' 20 &&
+          printf 'input: y\nfile created: %s\n' \
+            "$([[ -e "$(scn_dir dialogs)/ws/approved-by-capture.txt" ]] && echo yes || echo no)" |
           emit "$OUT/screens/approval-approved/effect.txt"
-      }
+      else
+        expect "dialogs at $w: the reply after approval" pty_wait 'Command done' 20
+      fi
     fi
     pty_submit 'ask me something'
     if snap_wait question "$w" 'Cline is asking|Type a' 20; then
       pty_keys 1
       sleep 0.5
       pty_keys Enter
-      pty_wait 'Thanks for' 20 || true
-      [[ "$w" == "$REF_WIDTH" ]] && pty_snap "$OUT/screens/question-answered/$w.txt"
+      if [[ "$w" == "$REF_WIDTH" ]]; then
+        snap question-answered "$w" 'Thanks for' 20
+      else
+        expect "dialogs at $w: the reply after the answer" pty_wait 'Thanks for' 20
+      fi
     fi
     pty_command '/fork'
-    snap_wait fork-confirm "$w" 'Create a fork|N/Esc' 10 || true
+    snap fork-confirm "$w" 'Create a fork|N/Esc' 10
     # n cancels the confirm (Y/Enter confirm, N/Esc cancel).
     pty_keys n
     sleep 1
@@ -1043,33 +1110,44 @@ step_dialogs() {
     pty_stop
     assert_no_hub "dialogs at $w"
   done
-  # Approval denied with n, and a plain line typed into the approval box.
-  local key
-  for key in n text; do
+  # Other answers to the approval box, each recorded with the exact input:
+  # n, Enter alone, `ok` and Enter, and a line that starts with y.
+  local key input
+  for key in n enter ok text; do
+    case "$key" in
+      n) input='n' ;;
+      enter) input='Enter' ;;
+      ok) input="'ok' then Enter" ;;
+      text) input="'yes please' then Enter" ;;
+    esac
     stub_start "deny-$key" '[
       {"tool": "run_commands", "args": {"commands": ["touch denied-by-capture.txt"]}},
       {"text": "Understood."}]'
     prepare_scn "deny-$key"
     pty_start "deny-$key" "$REF_WIDTH" --auto-approve false
-    pty_idle || {
+    if ! need "approval-$key: composer" pty_idle; then
       pty_stop
       continue
-    }
+    fi
     pty_submit 'run a command'
-    if pty_wait '\[y\] Approve' 20; then
-      if [[ "$key" == n ]]; then
-        pty_keys n
-      else
-        pty_type 'yes please'
-        sleep "$TYPE_PAUSE"
-        pty_keys Enter
-      fi
+    if need "approval-$key: the approval box" pty_wait '\[y\] Approve' 20; then
+      sleep 1
+      case "$key" in
+        n) pty_keys n ;;
+        enter) pty_keys Enter ;;
+        ok | text)
+          pty_type "$([[ "$key" == ok ]] && echo ok || echo 'yes please')"
+          sleep "$TYPE_PAUSE"
+          pty_keys Enter
+          ;;
+      esac
       sleep 4
-      pty_snap "$OUT/screens/approval-$key/$REF_WIDTH.txt"
-      printf 'file created: %s\n' \
-        "$([[ -e "$(scn_dir "deny-$key")/ws/denied-by-capture.txt" ]] && echo yes || echo no)" |
+      # The box still open, or the turn finished either way.
+      snap "approval-$key" "$REF_WIDTH" '\[y\] Approve|Understood' 20
+      printf 'input: %s\nfile created: %s\napproval box still shown: %s\n' "$input" \
+        "$([[ -e "$(scn_dir "deny-$key")/ws/denied-by-capture.txt" ]] && echo yes || echo no)" \
+        "$(pty_screen | grep -q '\[y\] Approve' && echo yes || echo no)" |
         emit "$OUT/screens/approval-$key/effect.txt"
-      snap_index "approval-$key" "$REF_WIDTH" captured
     fi
     pty_quit
     pty_stop
@@ -1082,7 +1160,6 @@ step_dialogs() {
 # a text turn, a subagent, /clear, /fork, then a relaunch that resumes the id.
 # A second scenario starts without --id (the TaskStart path).
 step_hooks() {
-  local s
   stub_start hooks '[
     {"text": "First turn reply."},
     {"tool": "spawn_agent", "args": {"systemPrompt": "You are a helper.", "task": "Say done."}},
@@ -1092,72 +1169,63 @@ step_hooks() {
     {"text": "Reply after fork."},
     {"text": "Reply after resume."}]'
   prepare_scn hooks --hooks
-  s="$(scn_dir hooks)"
   pty_start hooks "$REF_WIDTH" --id "$ID_ROOT"
-  pty_idle || die "hooks: the TUI did not reach the composer"
-  pty_submit 'first turn' 'First turn reply' || true
-  wait_hook hooks 'TaskComplete' || true
-  collect_hooks hooks "$OUT/hooks/assigned-first-turn"
+  if ! need "hooks: composer" pty_idle; then
+    pty_stop
+    return 0
+  fi
+  expect "hooks: first reply" pty_submit 'first turn' 'First turn reply'
+  expect "hooks: first TaskComplete" wait_hook hooks 'TaskComplete'
+  collect_hooks hooks "$OUT/hooks/assigned-first-turn" TaskResume TaskComplete
   store_rows hooks "$OUT/sessions/assigned-first-turn"
-  pty_submit 'spawn a helper' 'Parent saw the subagent' || true
-  sleep 2
-  pty_snap "$OUT/screens/subagent/$REF_WIDTH.txt"
-  snap_index subagent "$REF_WIDTH" captured
-  collect_hooks hooks "$OUT/hooks/assigned-subagent"
+  pty_submit 'spawn a helper'
+  snap subagent "$REF_WIDTH" 'Parent saw the subagent' 30
+  collect_hooks hooks "$OUT/hooks/assigned-subagent" TaskResume PreToolUse PostToolUse TaskComplete
   store_rows hooks "$OUT/sessions/assigned-subagent"
   pty_command '/clear'
-  sleep 2
-  pty_snap "$OUT/screens/clear/$REF_WIDTH.txt"
-  snap_index clear "$REF_WIDTH" captured
+  snap clear "$REF_WIDTH" 'What can I do for you' 10
   collect_hooks hooks "$OUT/hooks/assigned-clear-switch"
-  pty_submit 'after clear' 'Reply after clear' || true
-  wait_hook hooks 'TaskComplete' || true
-  collect_hooks hooks "$OUT/hooks/assigned-after-clear"
+  expect "hooks: reply after clear" pty_submit 'after clear' 'Reply after clear'
+  expect "hooks: TaskComplete after clear" wait_hook hooks 'TaskComplete'
+  collect_hooks hooks "$OUT/hooks/assigned-after-clear" TaskResume TaskComplete
   pty_command '/fork'
-  if pty_wait 'confirm' 10; then
+  if need "hooks: fork confirm" pty_wait 'Y/Enter to confirm' 10; then
     pty_keys Enter
-    snap_wait forked "$REF_WIDTH" 'Forked into new session' 10 || true
+    snap forked "$REF_WIDTH" 'Forked into new session' 10
   fi
   collect_hooks hooks "$OUT/hooks/assigned-fork-switch"
-  pty_submit 'after fork' 'Reply after fork' || true
-  wait_hook hooks 'TaskComplete' || true
-  collect_hooks hooks "$OUT/hooks/assigned-after-fork"
+  expect "hooks: reply after fork" pty_submit 'after fork' 'Reply after fork'
+  expect "hooks: TaskComplete after fork" wait_hook hooks 'TaskComplete'
+  collect_hooks hooks "$OUT/hooks/assigned-after-fork" TaskResume TaskComplete
   pty_quit
-  pty_snap "$OUT/screens/exit-summary-assigned/$REF_WIDTH.txt"
-  snap_index exit-summary-assigned "$REF_WIDTH" captured
+  snap exit-summary-assigned "$REF_WIDTH" 'Session Summary' 10
   pty_stop
   collect_hooks hooks "$OUT/hooks/assigned-quit"
   store_rows hooks "$OUT/sessions/assigned-after-fork"
   # Relaunch on the assigned id: which conversation it restores.
   pty_start hooks "$REF_WIDTH" --id "$ID_ROOT"
-  pty_idle || true
-  sleep 1
-  pty_snap "$OUT/screens/resume/$REF_WIDTH.txt"
-  snap_index resume "$REF_WIDTH" captured
-  pty_submit 'after resume' 'Reply after resume' || true
-  wait_hook hooks 'TaskComplete' || true
-  collect_hooks hooks "$OUT/hooks/assigned-resume"
+  expect "hooks: composer after relaunch" pty_idle
+  snap resume "$REF_WIDTH" 'First turn reply' 10
+  expect "hooks: reply after resume" pty_submit 'after resume' 'Reply after resume'
+  expect "hooks: TaskComplete after resume" wait_hook hooks 'TaskComplete'
+  collect_hooks hooks "$OUT/hooks/assigned-resume" TaskResume TaskComplete
   pty_quit
   pty_stop
   store_rows hooks "$OUT/sessions/assigned-resume"
   stub_requests hooks "$OUT/stub/hooks-requests.jsonl"
-  for d in "$OUT"/hooks/assigned-*; do
-    hook_summary "$d"
-  done
   assert_no_hub hooks
 
   # Without --id: the session id Cline generates and the TaskStart path.
   stub_start hooks-plain '[{"text": "Plain reply."}, {"text": "Second plain reply."}]'
   prepare_scn hooks-plain --hooks
   pty_start hooks-plain "$REF_WIDTH"
-  pty_idle || true
-  pty_submit 'plain turn' 'Plain reply' || true
-  pty_submit 'second plain turn' 'Second plain reply' || true
-  wait_hook hooks-plain 'TaskComplete' || true
+  expect "hooks-plain: composer" pty_idle
+  expect "hooks-plain: first reply" pty_submit 'plain turn' 'Plain reply'
+  expect "hooks-plain: second reply" pty_submit 'second plain turn' 'Second plain reply'
+  expect "hooks-plain: TaskComplete" wait_hook hooks-plain 'TaskComplete'
   pty_quit
   pty_stop
-  collect_hooks hooks-plain "$OUT/hooks/generated-id"
-  hook_summary "$OUT/hooks/generated-id"
+  collect_hooks hooks-plain "$OUT/hooks/generated-id" TaskStart TaskComplete
   store_rows hooks-plain "$OUT/sessions/generated-id"
   {
     printf 'session ids match ^[0-9]{13}_[0-9a-z]{5}$: '
@@ -1169,26 +1237,23 @@ step_hooks() {
 }
 
 # TaskError from a stub that answers HTTP 400, and the cancel paths: Escape
-# while the model streams, Escape while a tool runs, Ctrl+C while the model
-# streams.
+# while the model streams, while a tool runs and while a subagent streams,
+# and Ctrl+C while the model streams.
 step_errors() {
   stub_start errors '[{"error": 400, "message": "capture stub error", "times": 20}]'
   prepare_scn errors --hooks
   pty_start errors "$REF_WIDTH" --id "$ID_ROOT"
-  pty_idle || true
+  expect "errors: composer" pty_idle
   pty_submit 'this turn fails'
-  wait_hook errors 'TaskError' 60 || true
-  sleep 3
-  pty_snap "$OUT/screens/error/$REF_WIDTH.txt"
-  snap_index error "$REF_WIDTH" captured
+  expect "errors: TaskError" wait_hook errors 'TaskError' 60
+  snap error "$REF_WIDTH" 'Error: capture stub error' 20
   pty_quit
   pty_stop
-  collect_hooks errors "$OUT/hooks/error-400"
-  hook_summary "$OUT/hooks/error-400"
+  collect_hooks errors "$OUT/hooks/error-400" TaskError
   stub_requests errors "$OUT/stub/error-400-requests.jsonl"
   store_rows errors "$OUT/sessions/error-400"
 
-  local how
+  local how after
   for how in escape-stream escape-tool escape-subagent ctrl-c-stream; do
     case "$how" in
       escape-tool)
@@ -1206,41 +1271,42 @@ step_errors() {
     esac
     prepare_scn "cancel-$how" --hooks
     pty_start "cancel-$how" "$REF_WIDTH" --id "$ID_ROOT"
-    pty_idle || true
+    expect "cancel-$how: composer" pty_idle
     pty_submit 'a turn to cancel'
     case "$how" in
-      escape-tool) pty_wait 'sleep 30' 20 || true ;;
-      escape-subagent) stub_wait_reply "cancel-$how" 1 20 || true ;;
-      *) pty_wait 'Thinking' 20 || true ;;
+      escape-tool) expect "cancel-$how: tool running" pty_wait 'sleep 30' 20 ;;
+      escape-subagent) expect "cancel-$how: subagent request" stub_wait_reply "cancel-$how" 1 20 ;;
+      *) expect "cancel-$how: thinking" pty_wait 'Thinking' 20 ;;
     esac
     sleep 2
     if [[ "$how" == ctrl-c-stream ]]; then
       pty_keys C-c
+      after='Session Summary'
     else
       pty_keys Escape
+      after='Ask anything'
     fi
     sleep 4
-    pty_snap "$OUT/screens/cancel-$how/$REF_WIDTH.txt"
-    snap_index "cancel-$how" "$REF_WIDTH" captured
+    snap "cancel-$how" "$REF_WIDTH" "$after" 10
     pty_dead || pty_quit
     pty_stop
-    collect_hooks "cancel-$how" "$OUT/hooks/cancel-$how"
-    hook_summary "$OUT/hooks/cancel-$how"
+    collect_hooks "cancel-$how" "$OUT/hooks/cancel-$how" SessionShutdown
     store_rows "cancel-$how" "$OUT/sessions/cancel-$how"
   done
 
-  # Headless run (`--json`, no terminal) that hits its timeout mid-stream.
-  local s
+  # Headless run (`--json`, no terminal) with a timeout shorter than the
+  # held reply.
+  local s rc=0
   stub_start headless-timeout '[{"text": "Slow headless reply.", "delay": 30}]'
   prepare_scn headless-timeout --hooks
   s="$(scn_dir headless-timeout)"
-  (cd "$s/ws" && "$s/run" --json -t 3 'a headless turn' </dev/null >"$s/headless.ndjson" 2>"$s/headless.err") &&
-    printf 'exit code: 0\n' >"$s/headless.rc" || printf 'exit code: %s\n' "$?" >"$s/headless.rc"
+  "$s/run" --json -t 3 'a headless turn' </dev/null >"$s/headless.ndjson" 2>"$s/headless.err" || rc=$?
   mkdir -p "$OUT/headless"
-  jq -c "$LONG_STRING_FILTER" "$s/headless.ndjson" 2>/dev/null | emit "$OUT/headless/timeout.ndjson" || true
-  cat "$s/headless.rc" "$s/headless.err" | emit "$OUT/headless/timeout-exit.txt"
-  collect_hooks headless-timeout "$OUT/hooks/headless-timeout"
-  hook_summary "$OUT/hooks/headless-timeout"
+  if need "headless: no NDJSON" test -s "$s/headless.ndjson"; then
+    jq -c "$LONG_STRING_FILTER" "$s/headless.ndjson" | emit "$OUT/headless/timeout.ndjson"
+  fi
+  { printf 'exit code: %s\n' "$rc"; cat "$s/headless.err"; } | emit "$OUT/headless/timeout-exit.txt"
+  collect_hooks headless-timeout "$OUT/hooks/headless-timeout" TaskStart
   stub_stop
   assert_no_hub errors
 }
@@ -1254,17 +1320,15 @@ step_team() {
     {"text": "The team is done.", "when_tool": "team_spawn_teammate"}]'
   prepare_scn team --hooks
   pty_start team "$REF_WIDTH" --id "$ID_ROOT"
-  pty_idle || true
+  expect "team: composer" pty_idle
   pty_submit '/team say hello with a helper'
-  pty_wait 'The team is done' 60 || true
-  sleep 3
-  pty_snap "$OUT/screens/team/$REF_WIDTH.txt"
-  snap_index team "$REF_WIDTH" captured
+  snap team "$REF_WIDTH" 'The team is done' 60
   pty_quit
   pty_stop
-  collect_hooks team "$OUT/hooks/team"
-  hook_summary "$OUT/hooks/team"
+  collect_hooks team "$OUT/hooks/team" TaskResume PreToolUse PostToolUse TaskComplete
   store_rows team "$OUT/sessions/team"
+  expect "team: no teammate row" jq -e 'any(.[]; .session_id | test("__teamtask__"))' \
+    "$OUT/sessions/team/sessions-table.json" >/dev/null
   stub_requests team "$OUT/stub/team-requests.jsonl"
   stub_stop
   assert_no_hub team
@@ -1279,38 +1343,35 @@ step_history() {
     {"text": "Reply after the switch."}]'
   prepare_scn history --hooks
   pty_start history "$REF_WIDTH" --id "$ID_ROOT"
-  pty_idle || true
-  pty_submit 'session one' 'Reply in session one' || true
+  expect "history: composer (one)" pty_idle
+  expect "history: reply one" pty_submit 'session one' 'Reply in session one'
   pty_quit
   pty_stop
   pty_start history "$REF_WIDTH" --id "$ID_OTHER"
-  pty_idle || true
-  pty_submit 'session two' 'Reply in session two' || true
-  collect_hooks history "$OUT/hooks/history-before"
+  expect "history: composer (two)" pty_idle
+  expect "history: reply two" pty_submit 'session two' 'Reply in session two'
+  expect "history: TaskComplete two" wait_hook history 'TaskComplete'
+  collect_hooks history "$OUT/hooks/history-before" TaskResume TaskComplete
   pty_command '/history'
-  if snap_wait history-picker "$REF_WIDTH" 'session one' 10; then
+  if snap_wait history-picker "$REF_WIDTH" 'Session History' 10; then
     # The picker lists sessions newest first; Down moves to the older one.
     pty_keys Down
     sleep 0.5
     pty_keys Enter
-    sleep 3
-    pty_snap "$OUT/screens/history-switched/$REF_WIDTH.txt"
-    snap_index history-switched "$REF_WIDTH" captured
+    snap history-switched "$REF_WIDTH" 'Reply in session one' 10
   fi
-  pty_submit 'after the switch' 'Reply after the switch' || true
-  wait_hook history 'TaskComplete' || true
-  collect_hooks history "$OUT/hooks/history-after-switch"
+  expect "history: reply after the switch" pty_submit 'after the switch' 'Reply after the switch'
+  expect "history: TaskComplete after the switch" wait_hook history 'TaskComplete'
+  collect_hooks history "$OUT/hooks/history-after-switch" TaskResume TaskComplete
   pty_quit
   pty_stop
-  hook_summary "$OUT/hooks/history-before"
-  hook_summary "$OUT/hooks/history-after-switch"
   store_rows history "$OUT/sessions/history"
   stub_stop
   assert_no_hub history
 }
 
 # /undo: a stub turn writes a file through run_commands, then /undo restores
-# the checkpoint before it.
+# the checkpoint before it, chat and workspace.
 step_undo() {
   local s
   stub_start undo '[
@@ -1321,31 +1382,27 @@ step_undo() {
   prepare_scn undo --hooks
   s="$(scn_dir undo)"
   pty_start undo "$REF_WIDTH" --id "$ID_UNDO"
-  pty_idle || true
-  pty_submit 'first turn' 'Nothing changed yet' || true
-  pty_submit 'change the files' 'Files changed' || true
+  expect "undo: composer" pty_idle
+  expect "undo: first reply" pty_submit 'first turn' 'Nothing changed yet'
+  expect "undo: reply after the change" pty_submit 'change the files' 'Files changed'
+  expect "undo: TaskComplete" wait_hook undo 'TaskComplete'
   sleep 1
   {
     printf 'before /undo:\n'
     printf 'README.md: %s\n' "$(cat "$s/ws/README.md")"
     printf 'added.txt: %s\n' "$(cat "$s/ws/added.txt" 2>/dev/null || echo '<absent>')"
   } >"$s/undo-state.txt"
-  collect_hooks undo "$OUT/hooks/undo-before"
+  collect_hooks undo "$OUT/hooks/undo-before" TaskResume PreToolUse PostToolUse TaskComplete
   pty_command '/undo'
-  if snap_wait undo-picker "$REF_WIDTH" 'checkpoint|Checkpoint|restore|Restore' 10; then
+  if snap_wait undo-picker "$REF_WIDTH" 'Restore to Checkpoint' 10; then
     pty_keys Enter
-    sleep 2
-    pty_snap "$OUT/screens/undo-confirm/$REF_WIDTH.txt"
-    snap_index undo-confirm "$REF_WIDTH" captured
     # The second entry restores the workspace too (the first keeps files).
-    if pty_wait 'Restore chat and workspace' 5; then
+    if snap_wait undo-confirm "$REF_WIDTH" 'Restore chat and workspace' 10; then
       pty_keys Down
       sleep 0.5
       pty_keys Enter
-      sleep 3
+      snap undo-done "$REF_WIDTH" '❯ change the files' 10
     fi
-    pty_snap "$OUT/screens/undo-done/$REF_WIDTH.txt"
-    snap_index undo-done "$REF_WIDTH" captured
   fi
   {
     cat "$s/undo-state.txt"
@@ -1355,13 +1412,13 @@ step_undo() {
     printf 'git status:\n'
     wsgit "$s/ws" status --short
   } | emit "$OUT/sessions/undo/workspace.txt"
-  pty_submit 'after undo' 'Reply after undo' || true
-  wait_hook undo 'TaskComplete' || true
-  collect_hooks undo "$OUT/hooks/undo-after"
+  # The restored prompt stays in the composer; the next turn sends it with
+  # this text appended.
+  expect "undo: reply after undo" pty_submit 'after undo' 'Reply after undo'
+  expect "undo: TaskComplete after undo" wait_hook undo 'TaskComplete'
+  collect_hooks undo "$OUT/hooks/undo-after" TaskResume TaskComplete
   pty_quit
   pty_stop
-  hook_summary "$OUT/hooks/undo-before"
-  hook_summary "$OUT/hooks/undo-after"
   store_rows undo "$OUT/sessions/undo-store"
   stub_stop
   assert_no_hub undo
@@ -1381,8 +1438,8 @@ step_hub() {
   prepare_scn hub-prewarm --no-sandbox --hooks
   s="$(scn_dir hub-prewarm)"
   pty_start hub-prewarm "$REF_WIDTH" --id "$ID_HUB"
-  pty_idle || true
-  pty_submit 'hub turn' 'Hub turn reply' || true
+  expect "hub: composer" pty_idle
+  expect "hub: reply" pty_submit 'hub turn' 'Hub turn reply'
   sleep 3
   {
     printf '# no hub running, no sandbox mode; while the TUI runs\n'
@@ -1402,15 +1459,14 @@ step_hub() {
     jq -c 'keys' "$s/hub/discovery.json" 2>/dev/null || echo '<absent>'
   } | emit "$OUT/hub/prewarm-after-exit.txt"
   routing_log hub-prewarm "$OUT/hub/prewarm-routing.tsv"
-  collect_hooks hub-prewarm "$OUT/hooks/hub-prewarm"
-  hook_summary "$OUT/hooks/hub-prewarm"
+  collect_hooks hub-prewarm "$OUT/hooks/hub-prewarm" TaskComplete
   kill_hubs
 
   stub_start hub-sandbox '[{"text": "Hub turn reply."}]'
   prepare_scn hub-sandbox --hooks
   pty_start hub-sandbox "$REF_WIDTH" --id "$ID_HUB"
-  pty_idle || true
-  pty_submit 'hub turn' 'Hub turn reply' || true
+  expect "hub: composer" pty_idle
+  expect "hub: reply" pty_submit 'hub turn' 'Hub turn reply'
   sleep 3
   printf '# sandbox mode, while the TUI runs\nhub daemons: %s\n' "$(hub_daemons | wc -l)" |
     emit "$OUT/hub/sandbox-running.txt"
@@ -1420,16 +1476,15 @@ step_hub() {
   printf '# sandbox mode, after the TUI exited\nhub daemons: %s\n' "$(hub_daemons | wc -l)" |
     emit "$OUT/hub/sandbox-after-exit.txt"
   routing_log hub-sandbox "$OUT/hub/sandbox-routing.tsv"
-  collect_hooks hub-sandbox "$OUT/hooks/hub-sandbox"
-  hook_summary "$OUT/hooks/hub-sandbox"
+  collect_hooks hub-sandbox "$OUT/hooks/hub-sandbox" TaskComplete
   kill_hubs
 
   # A hub running on the private port: the TUI attaches to it.
   stub_start hub-attach '[{"text": "Hub turn reply."}]'
   prepare_scn hub-attach --no-sandbox --hooks
   s="$(scn_dir hub-attach)"
-  "$s/run" hub start --port "$HUB_PORT" --json 2>&1 | jq -c 'del(.. | .authToken?, .token?)' 2>/dev/null |
-    emit "$OUT/hub/attach-hub-start.json" || true
+  "$s/run" hub start --port "$HUB_PORT" --json >"$s/hub-start.json" 2>&1 || miss "hub-attach: hub start"
+  jq -c 'del(.. | .authToken?, .token?)' "$s/hub-start.json" | emit "$OUT/hub/attach-hub-start.json"
   sleep 2
   # The TUI gets a variable the hub was started without, so a hook record
   # shows whose environment the hook sees.
@@ -1437,15 +1492,13 @@ step_hub() {
   grep -q CAPTURE_TUI_ONLY "$s/run" || die "hub-attach: the TUI marker was not added"
   pty_start hub-attach "$REF_WIDTH" --id "$ID_HUB"
   sleep 8
-  pty_snap "$OUT/screens/hub-attach-assigned-id/$REF_WIDTH.txt"
-  snap_index hub-attach-assigned-id "$REF_WIDTH" captured
+  snap hub-attach-assigned-id "$REF_WIDTH" '❯' 10
   pty_stop
   pty_start hub-attach "$REF_WIDTH"
-  pty_idle || true
-  pty_submit 'hub turn' 'Hub turn reply' || true
+  expect "hub: composer" pty_idle
+  expect "hub: reply" pty_submit 'hub turn' 'Hub turn reply'
   sleep 3
-  pty_snap "$OUT/screens/hub-attach-generated-id/$REF_WIDTH.txt"
-  snap_index hub-attach-generated-id "$REF_WIDTH" captured
+  snap hub-attach-generated-id "$REF_WIDTH" 'Hub turn reply' 10
   {
     printf '# a hub started first, while the TUI runs\n'
     printf 'pane:\n'
@@ -1456,9 +1509,9 @@ step_hub() {
   pty_quit
   pty_stop
   routing_log hub-attach "$OUT/hub/attach-routing.tsv"
-  collect_hooks hub-attach "$OUT/hooks/hub-attach"
-  hook_summary "$OUT/hooks/hub-attach"
-  "$s/run" hub stop 2>&1 | emit "$OUT/hub/attach-hub-stop.txt" || true
+  collect_hooks hub-attach "$OUT/hooks/hub-attach" TaskComplete
+  "$s/run" hub stop >"$s/hub-stop.txt" 2>&1 || miss "hub-attach: hub stop"
+  emit "$OUT/hub/attach-hub-stop.txt" <"$s/hub-stop.txt"
   kill_hubs
 
   # An older release's hub serving a session, then this release's TUI.
@@ -1472,11 +1525,11 @@ step_hub() {
   stub_start hub-outdated '[{"text": "Old hub turn reply."}, {"text": "New TUI reply."}]'
   prepare_scn hub-outdated --no-sandbox --release "$OLD_RELEASE"
   s="$(scn_dir hub-outdated)"
-  "$s/run" hub start --port "$HUB_PORT" --json >/dev/null 2>&1 || true
+  "$s/run" hub start --port "$HUB_PORT" --json >"$s/hub-start.json" 2>&1 || miss "hub-outdated: older hub start"
   sleep 2
   pty_start hub-outdated "$REF_WIDTH"
-  pty_idle || true
-  pty_submit 'old hub turn' 'Old hub turn reply' || true
+  expect "hub-outdated: composer" pty_idle
+  expect "hub-outdated: reply" pty_submit 'old hub turn' 'Old hub turn reply'
   sleep 2
   {
     printf '# %s hub started, a %s TUI attached with a session\n' "$OLD_RELEASE" "$OLD_RELEASE"
@@ -1488,9 +1541,9 @@ step_hub() {
   chmod +x "$s/run-new"
   tm new-session -d -s new -x "$REF_WIDTH" -y "$HEIGHT" -c "$s/ws" "$(printf '%q' "$s/run-new")"
   sleep 10
-  tm capture-pane -p -t new | sed -e :a -e '/^[[:space:]]*$/{$d;N;ba' -e '}' |
-    emit "$OUT/screens/hub-outdated/$REF_WIDTH.txt"
-  snap_index hub-outdated "$REF_WIDTH" captured
+  PTY_TARGET=new
+  snap hub-outdated "$REF_WIDTH" '❯|Cline Hub' 10
+  PTY_TARGET=0
   {
     printf '# then a %s TUI on the same data root\n' "$RELEASE"
     printf 'hub daemons:\n'
@@ -1563,6 +1616,10 @@ dry_run() {
     die "id redaction changed the shape: $sample"
   [[ "$sample" != *1793890642459* && "$sample" != *5lrrc8n* && "$sample" != *6f1c2a3b* ]] ||
     die "id redaction left an id in place"
+  # A teammate's task id and its messages file share one placeholder.
+  sample="$(printf 'r__teamtask__helper__Ptaxg5 s/helper__Ptaxg5.messages.json' | redact)"
+  [[ "$sample" =~ ^r__teamtask__helper__([0-9]{6})\ s/helper__([0-9]{6})\.messages\.json$ &&
+    "${BASH_REMATCH[1]}" == "${BASH_REMATCH[2]}" ]] || die "teammate suffix redaction: $sample"
   rm -f "$ROOT/idmap.tsv"
   bash -n "$SCRIPT_DIR/capture"
   bash -n "$SCRIPT_DIR/hook-log"
@@ -1608,6 +1665,10 @@ assert_isolated() {
     die "a listener on 127.0.0.1:25463 is reachable inside the namespace"
   fi
   [[ "$(ps -e -o pid= | wc -l)" -lt 20 ]] || die "the process namespace is not private"
+  if [[ -d "$CAPTURE_HOST_HOME/.cline" ]]; then
+    [[ "$(stat -f -c %T "$CAPTURE_HOST_HOME/.cline")" == tmpfs && -z "$(ls -A "$CAPTURE_HOST_HOME/.cline")" ]] ||
+      die "the operator's Cline home is not covered inside the namespace"
+  fi
 }
 
 # scan_evidence <dir>: fails when a host-specific string or a credential
@@ -1769,8 +1830,16 @@ main() {
     unset "$name"
   done
   resolve_releases
-  ROOT="$(mkdir -p "$ROOT" && cd "$ROOT" && pwd -P)"
-  OUT="$(mkdir -p "$OUT" && cd "$OUT" && pwd -P)"
+  ROOT="$(realpath -m -- "$ROOT")"
+  OUT="$(realpath -m -- "$OUT")"
+  # The root holds raw, unredacted output; it must not sit in the evidence.
+  # The check runs before anything is created.
+  case "$ROOT/" in
+    "$OUT"/* | "$(realpath -m -- "$REPO_DIR/compat")"/*)
+      die "--root must not be inside the evidence directory"
+      ;;
+  esac
+  mkdir -p -- "$ROOT" "$OUT"
   if ((DRY_RUN == 1)); then
     dry_run "${steps[@]}"
     exit 0
@@ -1823,6 +1892,11 @@ main() {
     printf 'capture:x:%s:\n' "$CAPTURE_GID" >/run/group
     mount --bind /run/passwd /etc/passwd
     mount --bind /run/group /etc/group
+    # The operator's Cline home is covered by an empty tmpfs, so no step can
+    # read or write it even through a default path.
+    if [[ -d "$CAPTURE_HOST_HOME/.cline" ]]; then
+      mount -t tmpfs -o size=1m,mode=0700 tmpfs "$CAPTURE_HOST_HOME/.cline"
+    fi
     CAPTURE_NS_STAGE=inner exec unshare --user --map-user="$CAPTURE_UID" --map-group="$CAPTURE_GID" \
       bash "$SCRIPT_DIR/capture" --root /run/capture-root --out "$OUT" --release "$RELEASE" \
       ${OLD_RELEASE:+--old-release "$OLD_RELEASE"} "${steps[@]}"
@@ -1838,7 +1912,7 @@ main() {
   printf '#!/bin/bash\nprintf "%%s\\n" "$*" >>%q\n' "$ROOT/kit/opened.log" >"$ROOT/kit/bin/xdg-open"
   chmod +x "$ROOT/kit/bin/xdg-open"
   : >"$ROOT/kit/opened.log"
-  local stage
+  local stage failed=()
   for arg in "${steps[@]}"; do
     log "step: $arg"
     stage="$ROOT/stage/$arg"
@@ -1846,14 +1920,24 @@ main() {
     mkdir -p "$stage/screens"
     OUT_FINAL="$OUT"
     OUT="$stage"
+    MISSES=()
     run_step "$arg"
     stub_stop
     pty_stop
     assert_no_hub "step $arg"
     scan_evidence "$stage"
     OUT="$OUT_FINAL"
+    if ((${#MISSES[@]} > 0)); then
+      # A step that missed an expectation leaves compat/ as it was; its
+      # staged files stay below the root for inspection.
+      printf '%s\n' "${MISSES[@]}" >"$stage/MISSED.txt"
+      log "step $arg: ${#MISSES[@]} expectation(s) missed; compat/ keeps the previous evidence (see ${stage}/MISSED.txt)"
+      failed+=("$arg")
+      continue
+    fi
     swap_step "$arg" "$stage"
   done
+  ((${#failed[@]} == 0)) || die "steps with missed expectations: ${failed[*]}"
 }
 
 main "$@"

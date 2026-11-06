@@ -1,7 +1,7 @@
 
- ❯ first turn
-
- * Nothing changed yet.
+ ❯ first turn                                                                               ╭────────────────────────╮
+                                                                                            │ Restored to checkpoint │
+ * Nothing changed yet.                                                                     ╰────────────────────────╯
 
 
 
@@ -36,5 +36,5 @@
 ❯ change the files
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  stub-model (0) $0.00                                                                                ○ Plan ● Act (Tab)
- ws (main)
+ ws (main) | 1 file +1 -1
  ▶▶ Auto-approve all enabled (Shift+Tab)

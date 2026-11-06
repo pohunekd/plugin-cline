@@ -2,8 +2,8 @@
   {
     "session_id": "c0ffee00-0000-4000-8000-000000000001",
     "source": "cli",
-    "started_at": "2026-11-05T23:44:10.915Z",
-    "ended_at": "2026-11-05T23:44:17.094Z",
+    "started_at": "2026-11-06T00:18:31.440Z",
+    "ended_at": "2026-11-06T00:18:35.106Z",
     "exit_code": 0,
     "status": "completed",
     "status_lock": 5,
@@ -12,7 +12,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/team/ws",
     "workspace_root": "/capture-root____/s/team/ws",
-    "team_name": "team-00009",
+    "team_name": "team-00014",
     "enable_tools": 1,
     "enable_spawn": 1,
     "enable_teams": 1,
@@ -33,14 +33,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793922253182,
+          "createdAt": 1793924313694,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793922253182,
+            "createdAt": 1793924313694,
             "runCount": 1,
             "kind": "commit"
           }
@@ -67,13 +67,13 @@
     "transcript_path": "",
     "hook_path": "",
     "messages_path": "/capture-root____/s/team/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/c0ffee00-0000-4000-8000-000000000001.messages.json",
-    "updated_at": "2026-11-05T23:44:17.094Z"
+    "updated_at": "2026-11-06T00:18:35.106Z"
   },
   {
     "session_id": "c0ffee00-0000-4000-8000-000000000001__teamtask__helper__000001",
     "source": "cli",
-    "started_at": "2026-11-05T23:44:13.335Z",
-    "ended_at": "2026-11-05T23:44:13.345Z",
+    "started_at": "2026-11-06T00:18:33.911Z",
+    "ended_at": "2026-11-06T00:18:33.928Z",
     "exit_code": 0,
     "status": "completed",
     "status_lock": 1,
@@ -82,7 +82,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/team/ws",
     "workspace_root": "/capture-root____/s/team/ws",
-    "team_name": "team-00009",
+    "team_name": "team-00014",
     "enable_tools": 1,
     "enable_spawn": 1,
     "enable_teams": 1,
@@ -101,7 +101,7 @@
     },
     "transcript_path": "",
     "hook_path": "",
-    "messages_path": "/capture-root____/s/team/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/helper__Ptaxg5.messages.json",
-    "updated_at": "2026-11-05T23:44:13.345Z"
+    "messages_path": "/capture-root____/s/team/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/helper__000001.messages.json",
+    "updated_at": "2026-11-06T00:18:33.928Z"
   }
 ]

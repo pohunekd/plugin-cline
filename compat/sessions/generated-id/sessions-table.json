@@ -2,8 +2,8 @@
   {
     "session_id": "0000000000004_00000",
     "source": "cli",
-    "started_at": "2026-11-05T23:42:29.252Z",
-    "ended_at": "2026-11-05T23:42:32.958Z",
+    "started_at": "2026-11-06T00:16:50.529Z",
+    "ended_at": "2026-11-06T00:16:54.223Z",
     "exit_code": 0,
     "status": "completed",
     "status_lock": 8,
@@ -12,7 +12,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/hooks-plain/ws",
     "workspace_root": "/capture-root____/s/hooks-plain/ws",
-    "team_name": "team-00003",
+    "team_name": "team-00007",
     "enable_tools": 1,
     "enable_spawn": 1,
     "enable_teams": 1,
@@ -33,14 +33,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793922151553,
+          "createdAt": 1793924212810,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793922151553,
+            "createdAt": 1793924212810,
             "runCount": 1,
             "kind": "commit"
           }
@@ -67,6 +67,6 @@
     "transcript_path": "",
     "hook_path": "",
     "messages_path": "/capture-root____/s/hooks-plain/fakehome/.cline/data/sessions/0000000000004_00000/0000000000004_00000.messages.json",
-    "updated_at": "2026-11-05T23:42:32.958Z"
+    "updated_at": "2026-11-06T00:16:54.223Z"
   }
 ]

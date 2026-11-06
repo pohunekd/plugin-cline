@@ -3,8 +3,8 @@
     "version": 1,
     "session_id": "c0ffee00-0000-4000-8000-000000000001",
     "source": "cli",
-    "started_at": "2026-11-05T23:42:01.482Z",
-    "ended_at": "2026-11-05T23:42:26.746Z",
+    "started_at": "2026-11-06T00:16:24.606Z",
+    "ended_at": "2026-11-06T00:16:48.032Z",
     "exit_code": 0,
     "status": "completed",
     "interactive": true,
@@ -12,7 +12,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/hooks/ws",
     "workspace_root": "/capture-root____/s/hooks/ws",
-    "team_name": "team-xzogr",
+    "team_name": "team-00001",
     "enable_tools": true,
     "enable_spawn": true,
     "enable_teams": true,
@@ -28,14 +28,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793922123769,
+          "createdAt": 1793924186893,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793922123769,
+            "createdAt": 1793924186893,
             "runCount": 1,
             "kind": "commit"
           }
@@ -59,7 +59,7 @@
         "totalCost": 0
       },
       "terminal_marker": "failed_external_process_exit",
-      "terminal_marker_at": "2026-11-05T23:42:26.683Z",
+      "terminal_marker_at": "2026-11-06T00:16:47.977Z",
       "terminal_marker_source": "stale_session_reconciler"
     },
     "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/c0ffee00-0000-4000-8000-000000000001.messages.json"
@@ -68,8 +68,8 @@
     "version": 1,
     "session_id": "0000000000002_00000",
     "source": "cli",
-    "started_at": "2026-11-05T23:42:12.961Z",
-    "ended_at": "2026-11-05T23:42:14.947Z",
+    "started_at": "2026-11-06T00:16:34.024Z",
+    "ended_at": "2026-11-06T00:16:36.017Z",
     "exit_code": 0,
     "status": "completed",
     "interactive": true,
@@ -77,7 +77,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/hooks/ws",
     "workspace_root": "/capture-root____/s/hooks/ws",
-    "team_name": "team-00001",
+    "team_name": "team-00003",
     "enable_tools": true,
     "enable_spawn": true,
     "enable_teams": true,
@@ -93,14 +93,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793922133092,
+          "createdAt": 1793924194150,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793922133092,
+            "createdAt": 1793924194150,
             "runCount": 1,
             "kind": "commit"
           }
@@ -130,8 +130,8 @@
     "version": 1,
     "session_id": "0000000000003_00000",
     "source": "cli",
-    "started_at": "2026-11-05T23:42:14.958Z",
-    "ended_at": "2026-11-05T23:42:18.910Z",
+    "started_at": "2026-11-06T00:16:36.019Z",
+    "ended_at": "2026-11-06T00:16:39.985Z",
     "exit_code": 0,
     "status": "completed",
     "interactive": true,
@@ -139,7 +139,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/hooks/ws",
     "workspace_root": "/capture-root____/s/hooks/ws",
-    "team_name": "team-00002",
+    "team_name": "team-00004",
     "enable_tools": true,
     "enable_spawn": true,
     "enable_teams": true,
@@ -155,14 +155,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793922133092,
+          "createdAt": 1793924194150,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793922133092,
+            "createdAt": 1793924194150,
             "runCount": 1,
             "kind": "commit"
           }
@@ -187,19 +187,19 @@
       },
       "fork": {
         "forkedFromSessionId": "0000000000002_00000",
-        "forkedAt": "2026-11-05T23:42:14.957Z",
+        "forkedAt": "2026-11-06T00:16:36.019Z",
         "source": "cli",
         "checkpoints": {
           "latest": {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793922133092,
+            "createdAt": 1793924194150,
             "runCount": 1,
             "kind": "commit"
           },
           "history": [
             {
               "ref": "0000000000000000000000000000000000000001",
-              "createdAt": 1793922133092,
+              "createdAt": 1793924194150,
               "runCount": 1,
               "kind": "commit"
             }

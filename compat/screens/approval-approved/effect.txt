@@ -1,1 +1,2 @@
-file created after y: yes
+input: y
+file created: yes

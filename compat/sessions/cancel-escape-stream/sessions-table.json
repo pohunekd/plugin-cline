@@ -2,8 +2,8 @@
   {
     "session_id": "c0ffee00-0000-4000-8000-000000000001",
     "source": "cli",
-    "started_at": "2026-11-05T23:42:47.640Z",
-    "ended_at": "2026-11-05T23:42:56.637Z",
+    "started_at": "2026-11-06T00:17:06.516Z",
+    "ended_at": "2026-11-06T00:17:16.000Z",
     "exit_code": 0,
     "status": "cancelled",
     "status_lock": 5,
@@ -12,7 +12,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/cancel-escape-stream/ws",
     "workspace_root": "/capture-root____/s/cancel-escape-stream/ws",
-    "team_name": "team-00005",
+    "team_name": "team-00010",
     "enable_tools": 1,
     "enable_spawn": 1,
     "enable_teams": 1,
@@ -33,14 +33,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793922169930,
+          "createdAt": 1793924228775,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793922169930,
+            "createdAt": 1793924228775,
             "runCount": 1,
             "kind": "commit"
           }
@@ -67,6 +67,6 @@
     "transcript_path": "",
     "hook_path": "",
     "messages_path": "/capture-root____/s/cancel-escape-stream/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/c0ffee00-0000-4000-8000-000000000001.messages.json",
-    "updated_at": "2026-11-05T23:42:56.637Z"
+    "updated_at": "2026-11-06T00:17:16.000Z"
   }
 ]

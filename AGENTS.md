@@ -56,5 +56,6 @@ scripts/capture --root <dir> --release X.Y.Z all  # capture a newer release
 scripts/capture --root <dir> hooks errors         # single steps (after install)
 ```
 
-`--root` must not be inside the repository's `compat/`; `.capture/` (the
-default) is ignored by git.
+`--root` must not be inside the repository's `compat/` (the kit refuses it);
+`.capture/` (the default) is ignored by git. A step with a missed expectation
+leaves `compat/` unchanged and fails the run; fix the cause and re-run it.

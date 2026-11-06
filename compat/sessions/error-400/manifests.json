@@ -3,8 +3,8 @@
     "version": 1,
     "session_id": "c0ffee00-0000-4000-8000-000000000001",
     "source": "cli",
-    "started_at": "2026-11-05T23:42:38.123Z",
-    "ended_at": "2026-11-05T23:42:44.113Z",
+    "started_at": "2026-11-06T00:16:59.548Z",
+    "ended_at": "2026-11-06T00:17:02.981Z",
     "exit_code": 1,
     "status": "failed",
     "interactive": true,
@@ -12,7 +12,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/errors/ws",
     "workspace_root": "/capture-root____/s/errors/ws",
-    "team_name": "team-00004",
+    "team_name": "team-00008",
     "enable_tools": true,
     "enable_spawn": true,
     "enable_teams": true,
@@ -28,14 +28,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793922160413,
+          "createdAt": 1793924221769,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793922160413,
+            "createdAt": 1793924221769,
             "runCount": 1,
             "kind": "commit"
           }

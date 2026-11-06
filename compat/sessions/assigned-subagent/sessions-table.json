@@ -2,7 +2,7 @@
   {
     "session_id": "c0ffee00-0000-4000-8000-000000000001",
     "source": "cli",
-    "started_at": "2026-11-05T23:42:01.482Z",
+    "started_at": "2026-11-06T00:16:24.606Z",
     "ended_at": null,
     "exit_code": null,
     "status": "idle",
@@ -12,7 +12,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/hooks/ws",
     "workspace_root": "/capture-root____/s/hooks/ws",
-    "team_name": "team-xzogr",
+    "team_name": "team-00001",
     "enable_tools": 1,
     "enable_spawn": 1,
     "enable_teams": 1,
@@ -33,14 +33,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793922123769,
+          "createdAt": 1793924186893,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793922123769,
+            "createdAt": 1793924186893,
             "runCount": 1,
             "kind": "commit"
           }
@@ -67,13 +67,13 @@
     "transcript_path": "",
     "hook_path": "",
     "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/c0ffee00-0000-4000-8000-000000000001.messages.json",
-    "updated_at": "2026-11-05T23:42:05.699Z"
+    "updated_at": "2026-11-06T00:16:29.396Z"
   },
   {
     "session_id": "c0ffee00-0000-4000-8000-000000000001__agent_00000000-0000-4000-8000-000000000002",
     "source": "cli",
-    "started_at": "2026-11-05T23:42:05.577Z",
-    "ended_at": "2026-11-05T23:42:05.592Z",
+    "started_at": "2026-11-06T00:16:29.139Z",
+    "ended_at": "2026-11-06T00:16:29.187Z",
     "exit_code": 0,
     "status": "completed",
     "status_lock": 7,
@@ -82,7 +82,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/hooks/ws",
     "workspace_root": "/capture-root____/s/hooks/ws",
-    "team_name": "team-xzogr",
+    "team_name": "team-00001",
     "enable_tools": 1,
     "enable_spawn": 1,
     "enable_teams": 1,
@@ -102,6 +102,6 @@
     "transcript_path": "",
     "hook_path": "",
     "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/agent_00000000-0000-4000-8000-000000000002.messages.json",
-    "updated_at": "2026-11-05T23:42:05.592Z"
+    "updated_at": "2026-11-06T00:16:29.187Z"
   }
 ]
