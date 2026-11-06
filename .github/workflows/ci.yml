@@ -29,7 +29,7 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/sc"
           "$RUNNER_TEMP/sc/bin/pip" install --quiet shellcheck-py==0.11.0.1
-          "$RUNNER_TEMP/sc/bin/shellcheck" scripts/capture scripts/hook-log
+          "$RUNNER_TEMP/sc/bin/shellcheck" scripts/capture scripts/hook-log scripts/smoke
       - name: model stub syntax
         run: python3 -I -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' scripts/model-stub
       - name: capture dry run

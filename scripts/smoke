@@ -1,0 +1,399 @@
+#!/usr/bin/env bash
+# End-to-end check of the Cline package against a pohunek build: links
+# `package/` into an isolated daemon, launches the Cline release installed
+# under --cline-prefix and asserts launch, input, status, approval refusal and
+# resume.
+#
+# Everything (daemon, workers, Cline, the model stub) runs in user, network,
+# mount, UTS and PID namespaces: only a loopback interface, a private process
+# tree that ends with the run, an empty tmpfs over the operator's ~/.cline,
+# and a HOME, CLINE_DIR, hub port and hub discovery path below --root. No
+# credential, login or real model is involved: the turns go to
+# `scripts/model-stub` on the loopback with a placeholder key. The operator's
+# daemon and Cline hub are unreachable from the namespace and are never
+# touched.
+#
+#   scripts/smoke --root DIR --core-bin DIR --cline-prefix DIR
+#
+#   --root          scratch directory (created, reused only when it carries the
+#                   marker this script writes)
+#   --core-bin      directory with the pohunek, pohunekd and pohunek-sessiond
+#                   binaries of a core build that has the runtime features the
+#                   package requires
+#   --cline-prefix  npm global prefix of the release in compat/RELEASE, as
+#                   `scripts/capture install` lays it out (`bin/cline`,
+#                   `lib/node_modules/cline`); it is copied, never run in place
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(dirname "$SCRIPT_DIR")"
+
+# Seconds each wait loop polls before it fails, and the poll interval.
+WAIT_SECONDS=60
+POLL_SECONDS=0.5
+FAST_POLL_SECONDS=0.25
+# Seconds the stub holds the first reply so `working` is observable.
+HOLD_SECONDS=8
+# Initial-input acknowledgement window of `session new`, in milliseconds.
+INPUT_ACK_MS=8000
+# Bound on waiting for the daemon after teardown.
+REAP_SECONDS=10
+# Time a refused input gets to reach Cline before its effect is checked.
+REFUSAL_SETTLE_SECONDS=2
+# Loopback ports inside the namespace: the model stub and the private hub port.
+STUB_PORT=18083
+HUB_PORT=27463
+# Provider configuration for the stub; the key is a placeholder, not a secret.
+STUB_KEY=smoke-placeholder-not-a-key
+STUB_MODEL=stub-model
+# File the stub's scripted command creates in the workspace once approved.
+APPROVAL_MARKER=smoke-approved
+PROMPT="smoke prompt"
+# Characters a path may hold; the namespace commands carry paths as arguments.
+SAFE_PATH_RE='^[A-Za-z0-9._/+-]+$'
+
+ROOT="" CORE_BIN="" CLINE_PREFIX=""
+DAEMON_PID="" STUB_PID=""
+
+log() { printf 'smoke: %s\n' "$*" >&2; }
+die() {
+  log "FAIL: $*"
+  exit 1
+}
+safe_path() { # <what> <path>
+  [[ "$2" =~ $SAFE_PATH_RE ]] || die "$1 holds a character outside letters, digits, . _ + - /: $2"
+}
+
+usage() {
+  sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d;s/^# \{0,1\}//' >&2
+  exit 2
+}
+
+while (($# > 0)); do
+  case "$1" in
+    --root) ROOT="${2:?}"; shift 2 ;;
+    --core-bin) CORE_BIN="${2:?}"; shift 2 ;;
+    --cline-prefix) CLINE_PREFIX="${2:?}"; shift 2 ;;
+    -h | --help) usage ;;
+    *) usage ;;
+  esac
+done
+[[ -n "$ROOT" && -n "$CORE_BIN" && -n "$CLINE_PREFIX" ]] || usage
+
+RELEASE="$(sed -n 's/^release=//p' "$REPO/compat/RELEASE")"
+BIN_SHA="$(sed -n 's/^@cline\/cli-linux-x64\.bin\.sha256=//p' "$REPO/compat/RELEASE")"
+
+# --- host stage: checks, scratch root, namespace --------------------------
+
+if [[ "${SMOKE_STAGE:-host}" == host ]]; then
+  for tool in unshare ip jq sha256sum cp git readlink sed python3 pgrep hostname node; do
+    command -v "$tool" >/dev/null 2>&1 || die "missing tool: $tool"
+  done
+  unshare --help 2>&1 | grep -q -- '--map-user' || die "unshare lacks --map-user (util-linux 2.38 or later)"
+  for bin in pohunek pohunekd pohunek-sessiond; do
+    [[ -x "$CORE_BIN/$bin" ]] || die "$CORE_BIN/$bin is not executable"
+  done
+  safe_path --root "$ROOT"
+  safe_path "the checkout path" "$REPO"
+  MARKER=.cline-plugin-smoke-root
+  mkdir -p "$ROOT"
+  ROOT="$(cd "$ROOT" && pwd -P)"
+  safe_path "the resolved --root" "$ROOT"
+  if [[ -n "$(ls -A "$ROOT")" && ! -e "$ROOT/$MARKER" ]]; then
+    die "$ROOT is not empty and was not created by this script"
+  fi
+  touch "$ROOT/$MARKER"
+  # A socket path is bounded by sun_path; fail early with a clear message.
+  ((${#ROOT} <= 60)) || die "--root is too long for the daemon socket path (${#ROOT} > 60)"
+  CLINE_PREFIX="$(cd "$CLINE_PREFIX" && pwd -P)"
+  [[ -x "$CLINE_PREFIX/bin/cline" ]] || die "$CLINE_PREFIX is not a Cline prefix"
+  wrapper="$CLINE_PREFIX/lib/node_modules/cline"
+  [[ "$(jq -r .version "$wrapper/package.json")" == "$RELEASE" ]] ||
+    die "$CLINE_PREFIX holds Cline $(jq -r .version "$wrapper/package.json"), compat/RELEASE locks $RELEASE"
+  [[ "$(sha256sum "$wrapper/node_modules/@cline/cli-linux-x64/bin/cline" | cut -d' ' -f1)" == "$BIN_SHA" ]] ||
+    die "the binary under $CLINE_PREFIX does not match the sha256 in compat/RELEASE"
+  rm -rf "${ROOT:?}/prefix" "${ROOT:?}/shim" "${ROOT:?}/home" "${ROOT:?}/rt" "${ROOT:?}/cline" "${ROOT:?}/ws" "${ROOT:?}/stage" \
+    "${ROOT:?}/daemon.log" "${ROOT:?}/stub" "${ROOT:?}/hub"
+  mkdir -p "$ROOT/prefix"
+  cp -a "$CLINE_PREFIX/." "$ROOT/prefix/"
+  # Hub daemons of other installations (the operator's own) must survive.
+  before_hubs="$(pgrep -f -- '--cline-hub-daemon' | sort | tr '\n' ' ' || true)"
+  rc=0
+  SMOKE_STAGE=outer SMOKE_HOST_HOME="$HOME" SMOKE_UID="$(id -u)" SMOKE_GID="$(id -g)" \
+    unshare --user --map-root-user --net --mount --uts --pid --fork --kill-child \
+    bash "${BASH_SOURCE[0]}" --root "$ROOT" --core-bin "$(cd "$CORE_BIN" && pwd -P)" \
+    --cline-prefix "$ROOT/prefix" || rc=$?
+  sleep 1
+  after_hubs="$(pgrep -f -- '--cline-hub-daemon' | sort | tr '\n' ' ' || true)"
+  [[ "$before_hubs" == "$after_hubs" ]] || die "the set of Cline hub daemons on the host changed: [$before_hubs] -> [$after_hubs]"
+  ((rc == 0)) || exit "$rc"
+  log "host: the set of Cline hub daemons is unchanged ([${before_hubs% }])"
+  exit 0
+fi
+
+if [[ "$SMOKE_STAGE" == outer ]]; then
+  ip link set lo up
+  hostname smoke
+  mount -t proc proc /proc
+  # The operator's Cline home is covered by an empty tmpfs, so nothing here
+  # can read or write it even through a default path.
+  if [[ -d "$SMOKE_HOST_HOME/.cline" ]]; then
+    mount -t tmpfs -o size=1m,mode=0700 tmpfs "$SMOKE_HOST_HOME/.cline"
+  fi
+  SMOKE_STAGE=inner exec unshare --user --map-user="$SMOKE_UID" --map-group="$SMOKE_GID" \
+    bash "${BASH_SOURCE[0]}" --root "$ROOT" --core-bin "$CORE_BIN" --cline-prefix "$CLINE_PREFIX"
+fi
+
+# --- inner stage: the run -------------------------------------------------
+
+HOME_DIR="$ROOT/home"
+RT_DIR="$ROOT/rt"
+WS="$ROOT/ws"
+CLINE_DIR_PATH="$ROOT/cline"
+CLINE_DATA="$CLINE_DIR_PATH/data"
+HUB_DISCOVERY="$ROOT/hub/discovery.json"
+mkdir -p "$HOME_DIR/.config/pohunek/agents" "$HOME_DIR/.local/share" "$HOME_DIR/.local/state" \
+  "$WS" "$ROOT/stage" "$ROOT/stub" "$ROOT/hub" "$CLINE_DATA/settings"
+mkdir -p "$RT_DIR"
+chmod 700 "$RT_DIR" "$HOME_DIR/.config/pohunek" "$HOME_DIR/.config/pohunek/agents"
+# No env opt-out of telemetry exists; the setting is the only one.
+printf '{\n  "telemetryOptOut": true,\n  "autoUpdateEnabled": false\n}\n' >"$CLINE_DATA/settings/global-settings.json"
+git -C "$WS" init -q -b main .
+printf '# smoke workspace\n' >"$WS/README.md"
+git -C "$WS" add README.md
+git -C "$WS" -c user.name=smoke -c user.email=smoke@example.invalid commit -q -m init
+
+# The daemon probes `cline --version` with an empty private HOME and a 2 second
+# deadline. In a namespace without a route out, Cline takes about 8 seconds to
+# exit unless its settings opt out of telemetry (measured: 8.4 s without, 0.4 s
+# with `telemetryOptOut`), and the probe cannot see this root's settings. The
+# launcher below hands the probe and every session the same data root.
+mkdir -p "$ROOT/shim"
+cat >"$ROOT/shim/cline" <<SHIM
+#!/bin/bash
+export CLINE_DATA_DIR="$CLINE_DATA"
+exec "$ROOT/prefix/bin/cline" "\$@"
+SHIM
+chmod +x "$ROOT/shim/cline"
+AGENT_PATH="$ROOT/shim:$ROOT/prefix/bin:/usr/bin:/bin"
+
+# Every command runs with a cleared environment, so nothing of the caller's
+# POHUNEK_* or credential variables reaches the daemon, Cline or the CLI.
+isolated() {
+  env -i HOME="$HOME_DIR" XDG_CONFIG_HOME="$HOME_DIR/.config" XDG_DATA_HOME="$HOME_DIR/.local/share" \
+    XDG_STATE_HOME="$HOME_DIR/.local/state" XDG_RUNTIME_DIR="$RT_DIR" TMPDIR="$ROOT/stage" \
+    PATH="$AGENT_PATH" TERM=xterm-256color LANG=C.UTF-8 "$@"
+}
+pk() { isolated "$CORE_BIN/pohunek" "$@"; }
+
+teardown() {
+  local status=$?
+  if [[ -n "$STUB_PID" ]]; then
+    kill "$STUB_PID" 2>/dev/null || true
+  fi
+  if [[ -n "$DAEMON_PID" ]]; then
+    kill "$DAEMON_PID" 2>/dev/null || true
+    local i
+    for ((i = 0; i < REAP_SECONDS * 2; i++)); do
+      kill -0 "$DAEMON_PID" 2>/dev/null || break
+      sleep "$POLL_SECONDS"
+    done
+    kill -0 "$DAEMON_PID" 2>/dev/null && kill -9 "$DAEMON_PID" 2>/dev/null || true
+    wait "$DAEMON_PID" 2>/dev/null || true
+  fi
+  if ((status == 0)); then
+    log "PASS"
+  else
+    log "exit $status (daemon log: $ROOT/daemon.log)"
+  fi
+}
+trap teardown EXIT
+
+assert_isolated() {
+  local links
+  links="$(ip -o link | awk -F': ' '{print $2}' | tr '\n' ' ')"
+  [[ "$links" == "lo " ]] || die "network namespace is not loopback-only: $links"
+  [[ "$(hostname)" == smoke ]] || die "host name is not isolated"
+  if (exec 3<>/dev/tcp/127.0.0.1/25463) 2>/dev/null; then
+    die "a listener on 127.0.0.1:25463 is reachable inside the namespace"
+  fi
+  [[ "$(ps -e -o pid= | wc -l)" -lt 20 ]] || die "the process namespace is not private"
+  if [[ -d "$SMOKE_HOST_HOME/.cline" ]]; then
+    [[ "$(stat -f -c %T "$SMOKE_HOST_HOME/.cline")" == tmpfs && -z "$(ls -A "$SMOKE_HOST_HOME/.cline")" ]] ||
+      die "the operator's Cline home is not covered inside the namespace"
+  fi
+}
+assert_isolated
+log "namespace: loopback only, private process tree, operator's Cline home covered"
+
+wait_for() { # <description> <command...>
+  local what="$1" i
+  shift
+  for ((i = 0; i < WAIT_SECONDS * 2; i++)); do
+    if "$@" >/dev/null 2>&1; then return 0; fi
+    sleep "$POLL_SECONDS"
+  done
+  die "timed out waiting for $what"
+}
+
+# --- model stub ------------------------------------------------------------
+# Replies are served in order across the run: the held first turn, the turn
+# after resume, a command that needs approval, and its follow-up.
+jq -n --argjson hold "$HOLD_SECONDS" --arg cmd "touch $APPROVAL_MARKER" '[
+  {text: "Smoke reply one.", delay: $hold},
+  {text: "Smoke reply two."},
+  {tool: "run_commands", args: {commands: [$cmd]}},
+  {text: "Command done."}]' >"$ROOT/stub/script.json"
+: >"$ROOT/stub/requests.jsonl"
+python3 -I "$SCRIPT_DIR/model-stub" --port "$STUB_PORT" --script "$ROOT/stub/script.json" \
+  --log "$ROOT/stub/requests.jsonl" 2>"$ROOT/stub/stub.err" &
+STUB_PID=$!
+stub_up() { (exec 3<>"/dev/tcp/127.0.0.1/$STUB_PORT"); }
+wait_for "the model stub" stub_up
+
+# Cline's provider configuration (an `openai` provider on the stub), written
+# with the same variables the sessions get.
+cline_env() {
+  isolated CLINE_DIR="$CLINE_DIR_PATH" CLINE_DATA_DIR="$CLINE_DATA" CLINE_HUB_PORT="$HUB_PORT" \
+    CLINE_HUB_DISCOVERY_PATH="$HUB_DISCOVERY" CLINE_NO_AUTO_UPDATE=1 "$@"
+}
+(cd "$WS" && cline_env cline auth -p openai -k "$STUB_KEY" -m "$STUB_MODEL" -b "http://127.0.0.1:$STUB_PORT/v1") \
+  >"$ROOT/stage/auth.out" 2>&1 || die "cline auth failed: $(tail -n 3 "$ROOT/stage/auth.out")"
+
+# --- daemon -----------------------------------------------------------------
+isolated "$CORE_BIN/pohunek" daemon start --dev-subprocess >"$ROOT/daemon.log" 2>&1 &
+DAEMON_PID=$!
+wait_for "the isolated daemon" pk health
+socket="$RT_DIR/pohunek/daemon.sock"
+[[ -S "$socket" ]] || die "no daemon socket at $socket"
+log "daemon is up on $socket"
+
+# --- package under a development id ------------------------------------------
+cp "$REPO/package/runtime.toml" "$REPO/package/detect.toml" "$ROOT/stage/"
+sed -i 's/^id = "pohunek\.runtime\.cline"$/id = "dev.runtime.cline"/' "$ROOT/stage/runtime.toml"
+grep -q '^id = "dev.runtime.cline"$' "$ROOT/stage/runtime.toml" || die "could not stage the development id"
+pk plugin link "$ROOT/stage" --yes >/dev/null
+digest="$(pk plugin list --json | jq -r '.ok.packages[0].digest')"
+pk plugin enable dev.runtime.cline --digest "${digest#sha256:}" >/dev/null
+pk plugin select dev.runtime.cline --digest "${digest#sha256:}" >/dev/null
+pk plugin doctor | grep -q 'No problems found' || die "plugin doctor reports a problem"
+
+# Profiles carry what the harness decides: the isolated config home, the hub
+# port and discovery path, and sandbox mode, which keeps every session in the
+# TUI process (the development recipe of the README). `cline-approve` also
+# turns Cline's approval on, as the approval scenario needs.
+profile() { # <name> <args toml>
+  cat >"$HOME_DIR/.config/pohunek/agents/$1.toml" <<EOF
+base = "cline"
+package = "dev.runtime.cline"
+digest = "$digest"
+program = "cline"
+args = $2
+[env]
+CLINE_DIR = "$CLINE_DIR_PATH"
+CLINE_DATA_DIR = "$CLINE_DATA"
+CLINE_SANDBOX = "1"
+CLINE_SANDBOX_DATA_DIR = "$CLINE_DATA"
+CLINE_HUB_PORT = "$HUB_PORT"
+CLINE_HUB_DISCOVERY_PATH = "$HUB_DISCOVERY"
+EOF
+  chmod 600 "$HOME_DIR/.config/pohunek/agents/$1.toml"
+}
+profile cline-local '[]'
+profile cline-approve '["--auto-approve", "false"]'
+
+activity_of() { pk session list --json | jq -r --arg n "$1" '.ok[] | select(.name == $n) | .activity // "none"'; }
+session_id() { pk session list --json | jq -r --arg n "$1" '.ok[] | select(.name == $n) | .id'; }
+root_pid_of() { pk session list --json | jq -r --arg n "$1" '.ok[] | select(.name == $n) | .pid'; }
+native_of() { pk session list --json | jq -r --arg n "$1" '.ok[] | select(.name == $n) | .native_session_id // empty'; }
+want_activity() { [[ "$(activity_of "$1")" == "$2" ]]; }
+screen_has() { pk session screen "$1" | grep -q -- "$2"; }
+cmdline_of() { tr '\0' ' ' <"/proc/$1/cmdline"; }
+assert_no_hub() {
+  if pgrep -f -- '--cline-hub-daemon' >/dev/null 2>&1; then die "$1: a Cline hub daemon is running"; fi
+}
+
+# --- D2: bare launch reaches idle, no promo modal ------------------------------
+pk session new --agent cline-local --cwd "$WS" --name bare --yes >/dev/null
+wait_for "the bare session to read idle" want_activity bare idle
+bare_id="$(session_id bare)"
+bare_pid="$(root_pid_of bare)"
+for name in CLINE_NO_AUTO_UPDATE=1 CLINE_DISABLE_CLINE_PASS_NOTICE=1; do
+  tr '\0' '\n' <"/proc/$bare_pid/environ" | grep -qx "$name" || die "$name is not in the launch environment"
+done
+if pk session screen "$bare_id" | grep -Eq 'Try ClinePass|Cline Desktop|Press Enter to open'; then
+  die "a promo modal shows"
+fi
+[[ ! -e "$CLINE_DATA/settings/cli-notices.json" ]] || die "Cline recorded a promo notice"
+assert_no_hub "bare launch"
+pk session stop "$bare_id" >/dev/null
+log "D2: launch with the local-runtime variables reads idle, update and promo variables set, no promo modal, no hub daemon"
+
+# --- D3, D4: initial input reaches the composer; a stub turn reads working, then idle
+pk session new --agent cline-local --cwd "$WS" --name turn --input "$PROMPT" \
+  --input-ack-timeout-ms "$INPUT_ACK_MS" --yes --json >"$ROOT/stage/turn-new.json"
+[[ "$(jq -r '.ok.prompt_delivered' "$ROOT/stage/turn-new.json")" == "true" ]] || die "the initial input did not start a turn"
+turn_id="$(jq -r '.ok.id' "$ROOT/stage/turn-new.json")"
+turn_pid="$(root_pid_of turn)"
+turn_native="$(native_of turn)"
+[[ -n "$turn_native" ]] || die "the session has no native reference"
+[[ "$(cmdline_of "$turn_pid")" == *" --id $turn_native "* ]] || die "unexpected launch arguments: $(cmdline_of "$turn_pid")"
+seen_working=""
+for ((i = 0; i < WAIT_SECONDS * 4; i++)); do
+  if want_activity turn working; then
+    seen_working=1
+    break
+  fi
+  sleep "$FAST_POLL_SECONDS"
+done
+[[ -n "$seen_working" ]] || die "the stub turn never read working"
+screen_has "$turn_id" "$PROMPT" || die "the initial input is not on the screen"
+reply_one() { screen_has "$turn_id" 'Smoke reply one'; }
+wait_for "the stub reply on screen" reply_one
+wait_for "the turn session to read idle" want_activity turn idle
+log "D3: the initial input started a turn (prompt_delivered), launched as cline --id $turn_native"
+log "D4: the stub turn read working, then idle"
+
+# --- D6: resume shows the conversation; recovery needs <id>/<id>.json -----------
+manifest="$CLINE_DATA/sessions/$turn_native/$turn_native.json"
+[[ -f "$manifest" ]] || die "no session manifest at $manifest"
+pk session stop "$turn_id" >/dev/null
+pk session resume "$turn_id" >/dev/null
+wait_for "the resumed session to read idle" want_activity turn idle
+resumed_pid="$(root_pid_of turn)"
+[[ "$(cmdline_of "$resumed_pid")" == *" --id $turn_native "* ]] || die "unexpected resume arguments: $(cmdline_of "$resumed_pid")"
+screen_has "$turn_id" "$PROMPT" || die "the resumed screen does not show the prompt"
+screen_has "$turn_id" 'Smoke reply one' || die "the resumed screen does not show the earlier reply"
+pk session input "$turn_id" "after resume" >/dev/null
+reply_two() { screen_has "$turn_id" 'Smoke reply two'; }
+wait_for "the reply after resume" reply_two
+wait_for "the resumed session to read idle again" want_activity turn idle
+[[ "$(native_of turn)" == "$turn_native" ]] || die "the resumed session changed its native reference"
+pk session stop "$turn_id" >/dev/null
+mv "$manifest" "$manifest.away"
+refusal="$(pk session resume "$turn_id" --json || true)"
+mv "$manifest.away" "$manifest"
+[[ "$(jq -r '.err.code' <<<"$refusal")" == agent_native_reference_missing ]] ||
+  die "resume without the session manifest was not refused: $refusal"
+log "D6: resume relaunched cline --id $turn_native and showed the conversation; resume without <id>/<id>.json was refused"
+
+# --- D5: blocked on approval, plain text refused ---------------------------------
+pk session new --agent cline-approve --cwd "$WS" --name approval --yes >/dev/null
+wait_for "the approval session to read idle" want_activity approval idle
+approval_id="$(session_id approval)"
+pk session input "$approval_id" "run a command" >/dev/null
+approval_seen() { screen_has "$approval_id" 'Cline needs permission'; }
+wait_for "the approval box" approval_seen
+wait_for "the approval session to read blocked" want_activity approval blocked
+screen_has "$approval_id" 'Auto-approve all disabled' || die "approval is not on"
+refusal="$(pk session input "$approval_id" "hello" --json || true)"
+[[ "$(jq -r '.err.code' <<<"$refusal")" == session_input_blocked ]] || die "input reached the approval box: $refusal"
+sleep "$REFUSAL_SETTLE_SECONDS"
+[[ ! -e "$WS/$APPROVAL_MARKER" ]] || die "the command ran without the operator"
+approval_seen || die "the approval box was answered without the operator"
+want_activity approval blocked || die "the approval session left blocked"
+pk session stop "$approval_id" >/dev/null
+log "D5: the stub run_commands read blocked under approval, plain text was refused (session_input_blocked), the command did not run"
+
+assert_no_hub "end of run"
+log "stub served: $(jq -r '[.reply] | @csv' "$ROOT/stub/requests.jsonl" | tr '\n' ' ')"

@@ -22,6 +22,7 @@ and the issues P0-P5 of this repository.
 |---|---|
 | `package/` | The runtime package: `runtime.toml` (launch contract) and `detect.toml` (process and screen rules) |
 | `kit/` | Stand-in for the plugin kit: a test crate that builds the package twice, installs it through core's definition path, reads the captured version banner and process trees, and runs the detection manifest on every screen of `compat/screens`, as a whole and rule by rule |
+| `scripts/smoke` | End-to-end check against a pohunek build and an installed Cline: isolated test daemon in a loopback-only namespace, launch, input, status, approval refusal, resume |
 | `scripts/capture` | Capture kit (bash): fetches a release from the npm registry, checks its integrity, runs Cline in throwaway homes inside loopback-only namespaces and records what it shows, which hooks it runs and what it stores |
 | `scripts/model-stub` | Loopback OpenAI-compatible chat-completions stub (Python standard library): scripted text, tool calls and HTTP errors |
 | `scripts/hook-log` | Cline file hook that logs one hook call: payload, environment names, `CLINE_*`/`CAPTURE_*` values, ancestor processes |
@@ -228,12 +229,58 @@ phrases above the composer stays unblocked (checked). `promo_modal`,
 behind them and no such guard; a transcript that quotes both of a rule's
 phrases would read blocked.
 
-### Definition of done
+### Definition of done and the smoke run
 
 D1 (lint, double build, `verify`, `detect-check` on the P0 corpus) is covered by
-the kit tests above. D2 to D6 need a running Cline in an isolated root with the
-stub (a smoke script); that script does not exist yet, and nothing in this
-change launched Cline, so they are **unverified**.
+the kit tests above. D2 to D6 are checked by `scripts/smoke`, which links
+`package/` under a development id into an isolated test daemon
+(`pohunek daemon start --dev-subprocess`), launches the Cline release of
+`compat/RELEASE` and drives it against `scripts/model-stub`:
+
+```bash
+scripts/capture --root /path/to/scratch install        # the release into a throwaway prefix
+scripts/smoke --root /path/to/smoke-root --core-bin /path/to/core/target/debug \
+  --cline-prefix /path/to/scratch/prefix/3.0.74
+```
+
+Isolation (asserted by the script before anything starts): user, network,
+mount, UTS and PID namespaces with only a loopback interface and a private
+process tree that ends with the run; an empty tmpfs over the operator's
+`~/.cline`; 127.0.0.1:25463 unreachable; a HOME, `CLINE_DIR`,
+`CLINE_DATA_DIR`, hub port (27463) and hub discovery path below `--root`;
+every command through `env -i`, so no `POHUNEK_*` reaches the daemon, Cline or
+the CLI. The sessions carry `CLINE_SANDBOX=1` and `CLINE_SANDBOX_DATA_DIR`
+(the development recipe above), so each stays in its TUI process. The script
+refuses a prefix whose version or binary sha256 differs from `compat/RELEASE`,
+and compares the set of Cline hub daemons on the host before and after (the
+operator's hub is never contacted and is unchanged).
+
+Result, Cline 3.0.74 on Linux x86_64 against the core build of
+zajca/pohunek `4fcf94d` (three consecutive runs, all PASS; the stub served
+replies 0, 1 and 2):
+
+| DoD | Measured |
+|---|---|
+| D2 | A bare launch reads `idle`; `CLINE_NO_AUTO_UPDATE=1` and `CLINE_DISABLE_CLINE_PASS_NOTICE=1` are in the launch environment; no promo modal on the screen and no `settings/cli-notices.json`; no hub daemon |
+| D3 | `session new --input "smoke prompt"` returns `prompt_delivered: true`; the prompt is on the screen; the process runs as `cline --id <uuid>` with the core-generated id as the native reference |
+| D4 | The stub turn (reply held 8 s) reads `working`, then `idle` |
+| D5 | Under `--auto-approve false` (set by the scenario's profile), a stub `run_commands` reads `blocked` with `Cline needs permission` on screen; `session input "hello"` is refused with `session_input_blocked`; the command did not run and the box still shows |
+| D6 | `session stop` then `session resume` relaunches `cline --id <uuid>`, shows the earlier prompt and reply, accepts a further turn and keeps the native reference; with `<data>/sessions/<id>/<id>.json` moved away, resume is refused with `agent_native_reference_missing` |
+
+Findings of the smoke run:
+
+- **Version probe vs telemetry.** The daemon probes `cline --version` in an
+  empty private HOME with a 2 second deadline. In a namespace without a route
+  out, Cline needed about 8.4 s to exit unless its settings opt out of
+  telemetry (0.4 s with `telemetryOptOut`, measured with the release
+  binary), so the probe failed with `agent_runtime_unsupported` until the
+  harness started `cline` through a launcher that sets `CLINE_DATA_DIR`. On a
+  host with a working route out the probe is expected to be fast; a host
+  where Cline's telemetry endpoint hangs would see the same refusal
+  (unverified, no such host was available).
+- The sessions run Cline through that launcher, not through the bare
+  wrapper; the process layout under it is the wrapper's (`node ... bin/cline
+  --id <uuid>`).
 
 ## Verified behaviour (Cline 3.0.74, Linux x86_64)
 
@@ -321,12 +368,11 @@ schedules it after `start()` has run that turn). NDJSON in
 
 ## Unverified
 
-- **D2 to D6 of the descriptor** (`smoke`: idle in an isolated root, initial
-  input, a stub turn, blocked on approval with plain text refused, resume of a
-  stopped session and recovery refusing a missing `<id>/<id>.json`): no smoke
-  script yet. The existence check's declaration is asserted against core's
-  definition and the `<id>/<id>.json` layout is in
-  `compat/sessions/*/tree.txt`; core's check was not run.
+- **Smoke scope.** The smoke run used a dev-subprocess test daemon, the stub
+  and sandbox mode (local runtime); a run against the default hub-attached
+  mode, with a real model, or with an installed (service) daemon is
+  unverified. Input that is typed into the approval box by an operator
+  through `pohunek attach` was not driven.
 - **`submit_delay_ms = 500`**: the capture kit's pause between typed text and
   Enter; a shorter delay is untested.
 - **Cline 3.0.75 and later 3.x**: accepted by the version range, never captured.

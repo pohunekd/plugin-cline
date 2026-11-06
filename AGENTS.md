@@ -56,6 +56,7 @@ scripts/capture --root <dir> all                  # fetch the release and captur
 scripts/capture --root <dir> --release X.Y.Z all  # capture a newer release
 scripts/capture --root <dir> hooks errors         # single steps (after install)
 (cd kit && cargo test --locked)                   # package/ against core and compat/screens
+scripts/smoke --root <dir> --core-bin <dir> --cline-prefix <dir>   # D2-D6 in a loopback-only namespace
 ```
 
 `--root` must not be inside the repository's `compat/` (the kit refuses it);
