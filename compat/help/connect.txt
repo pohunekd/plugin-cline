@@ -1,0 +1,17 @@
+Usage: cline connect [options] [channel]
+
+Connect to an external channel
+
+Arguments:
+  channel                  Channel to connect Cline CLI to
+
+Options:
+  --stop                   Kill all current channel connections
+  --restart                Restart a channel connection
+  --restart-instance <id>  Restart one connector instance (used by daemon
+                           recovery)
+  --cleanup-instance <id>  Reap one dead connector instance, preserving
+                           autostart (used by hub supervision)
+  -h, --help               display help for command
+
+Run 'connect <channel> --help' for channel-specific options.

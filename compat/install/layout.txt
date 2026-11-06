@@ -1,0 +1,21 @@
+wrapper package: cline 3.0.74 (bin: {"cline":"./bin/cline"})
+wrapper scripts: {"postinstall":"node ./postinstall.mjs || true"}
+optionalDependencies: ["@cline/cli-darwin-arm64","@cline/cli-darwin-x64","@cline/cli-linux-arm64","@cline/cli-linux-x64","@cline/cli-windows-arm64","@cline/cli-windows-x64"]
+platform package: @cline/cli-linux-x64 3.0.74
+binary: 161793504 bytes, sha256 80ee64f82f895ccc695b95acd18252e00f17186a308257d7b169d444a2b27ef4
+binary format: ELF
+
+layout below the prefix (npm global install):
+bin
+bin/cline
+lib
+lib/node_modules
+lib/node_modules/cline
+lib/node_modules/cline/LICENSE
+lib/node_modules/cline/README.md
+lib/node_modules/cline/bin
+lib/node_modules/cline/bin/ca-certs.cjs
+lib/node_modules/cline/bin/cline
+lib/node_modules/cline/node_modules
+lib/node_modules/cline/package.json
+lib/node_modules/cline/postinstall.mjs

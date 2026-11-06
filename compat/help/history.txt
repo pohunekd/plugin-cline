@@ -1,0 +1,15 @@
+Usage: cline history|h [options] [command]
+
+List session history or manage saved sessions
+
+Options:
+  --json                        Output as JSON
+  --limit <count>               Maximum number of sessions to show (default:
+                                "50")
+  --config <dir>                configuration directory
+  -h, --help                    display help for command
+
+Commands:
+  delete [options]              Delete a session from history
+  update [options]              Update a session in history
+  export [options] <sessionId>  Export a session as a standalone HTML file

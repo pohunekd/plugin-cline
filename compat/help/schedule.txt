@@ -1,0 +1,6 @@
+Usage: cline schedule [options]
+
+Manage scheduled tasks
+
+Options:
+  -h, --help  display help for command

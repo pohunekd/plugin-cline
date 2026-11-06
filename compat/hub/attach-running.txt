@@ -1,0 +1,7 @@
+# a hub started first, while the TUI runs
+pane:
+node-MainThread [session leader]: node /capture-root____/prefix/3.0.74/bin/cline
+  .cline: /capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/.cline
+hub daemons:
+parent: bash
+.cline [session leader]: /capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/.cline --cline-hub-daemon --cwd /capture-root____/s/hub-attach/ws --host 127.0.0.1 --port 27463 --pathname /hub

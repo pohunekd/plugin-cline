@@ -1,0 +1,2 @@
+001-TaskResume.json	TaskResume	agent_resume	c0ffee00-0000-4000-8000-000000000001	agent_00000000-0000-4000-8000-000000000008	-	.cline>node-MainThread>tmux: server>bash
+002-SessionShutdown.json	SessionShutdown	session_shutdown	c0ffee00-0000-4000-8000-000000000001	agent_00000000-0000-4000-8000-000000000008	-	.cline>node-MainThread>tmux: server>bash

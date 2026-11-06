@@ -1,0 +1,40 @@
+
+ ❯ session two
+
+ * Reply in session two.
+
+
+
+
+
+
+
+
+
+
+
+
+
+                      Session History
+
+                       ❯ session two                                                     just now
+                         session one                                                     just now
+
+                      ↑/↓ navigate, Enter to resume, ← delete, → export, Esc to close
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Ask anything...
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ stub-model (10) $0.00                                                                               ○ Plan ● Act (Tab)
+ ws (main)
+ ▶▶ Auto-approve all enabled (Shift+Tab)

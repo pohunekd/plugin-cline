@@ -1,0 +1,1943 @@
+#!/usr/bin/env bash
+# Capture kit for the Cline CLI: records what the CLI shows, which hooks it
+# runs and what it stores, without any account, credential or real model, as
+# evidence under compat/.
+#
+# The release is fetched from the npm registry, checked against the
+# registry's integrity, and unpacked into a throwaway prefix below --root.
+# Every other step runs in a namespace with only a loopback interface, its own
+# process tree and a throwaway HOME, CLINE_DIR and CLINE_DATA_DIR per scenario.
+# Model turns go to scripts/model-stub on loopback.
+#
+# Requires: bash 4+, tmux, curl, sed, awk, perl, jq, sha256sum, git, ps, node,
+# python3, sqlite3, ip, unshare. See README.md.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+
+ROOT="${CAPTURE_ROOT:-$REPO_DIR/.capture}"
+OUT="$REPO_DIR/compat"
+RELEASE_FILE="$REPO_DIR/compat/RELEASE"
+DRY_RUN=0
+RELEASE=""
+OLD_RELEASE=""
+REGISTRY="https://registry.npmjs.org"
+# Terminal widths of the screen captures; the issue's contract is 20 to 200.
+WIDTHS=(20 40 80 120 160 200)
+REF_WIDTH=120
+HEIGHT=40
+# Poll interval and per-wait timeout of the pty driver, in seconds.
+POLL=0.2
+WAIT_TIMEOUT=30
+# Seconds the first frame needs before it accepts input.
+SETTLE=1.5
+# Pause between typed text and Enter; an Enter in the same burst is read as
+# part of a paste.
+TYPE_PAUSE=0.5
+# Seconds the stub holds a reply so the working state can be captured.
+HOLD=6
+# Loopback ports inside the namespace: the model stub and the private hub port.
+STUB_PORT=18431
+HUB_PORT=27463
+# Provider configuration for the stub; the key is a placeholder, not a secret.
+STUB_KEY=capture-placeholder-key
+STUB_MODEL=stub-model
+# Assigned session ids (the launch shape `cline --id <uuid>`).
+ID_ROOT=c0ffee00-0000-4000-8000-000000000001
+ID_OTHER=c0ffee00-0000-4000-8000-000000000002
+ID_UNDO=c0ffee00-0000-4000-8000-000000000003
+ID_HUB=c0ffee00-0000-4000-8000-000000000004
+# Cline's file hook events (sdk hook-file-config.ts).
+HOOK_EVENTS=(TaskStart TaskResume TaskCancel TaskComplete TaskError PreToolUse PostToolUse
+  UserPromptSubmit PreCompact SessionShutdown)
+# Fixed commit identity and dates, so the workspace head is the same every run.
+GIT_IDENTITY=(GIT_AUTHOR_NAME=capture GIT_AUTHOR_EMAIL=capture@example.invalid
+  GIT_COMMITTER_NAME=capture GIT_COMMITTER_EMAIL=capture@example.invalid
+  GIT_AUTHOR_DATE=2000-01-01T00:00:00Z GIT_COMMITTER_DATE=2000-01-01T00:00:00Z)
+
+# jq filters: strings over 80 characters (prompts, tool output) become a length
+# marker, paths below the redacted root stay; host-specific fields (pids, free
+# disk space) are dropped.
+LONG_STRING_FILTER='walk(if type == "string" and length > 80 and (startswith("/capture-root") | not) then "<" + (length | tostring) + " chars>" else . end)'
+HOST_FIELD_FILTER='walk(if type == "object" then with_entries(select(.key | test("^pid$|_pid$|^pid_|free_bytes") | not)) else . end)'
+
+STEPS_ALL=(install version onboarding promo turn dialogs hooks errors team history undo hub arch)
+
+export LANG=C.UTF-8 LC_ALL=C.UTF-8
+
+usage() {
+  cat <<'EOF'
+usage: scripts/capture [--dry-run] [--root DIR] [--out DIR] [--release X.Y.Z]
+                       [--old-release X.Y.Z] <step>...
+
+steps:
+  install     fetch the release (and the older hub release) from the npm
+              registry, check the integrity, unpack into <root>/prefix
+  version     RELEASE, --version, --help of every command, npm layout,
+              process tree with and without the postinstall cache, settings
+  onboarding  welcome, provider picker, API-key form and sign-in screens
+  promo       one-time promo modals and the variable that suppresses them
+  turn        idle (home, chat), working (thinking, tool row), title, OSC
+  dialogs     approval (--auto-approve false), question, fork confirm
+  hooks       hook payloads with the `--id` launch shape: turns, subagent,
+              /clear, /fork, resume; session store rows and manifests
+  errors      TaskError (HTTP 400 from the stub), cancel paths
+  team        an agent team (/team, team_spawn_teammate, team_run_task)
+  history     /history switching between two sessions
+  undo        /undo checkpoint restore
+  hub         hub prewarm, sandbox mode, a hub-hosted session's hooks, an
+              older hub (only inside the namespace, on a private port)
+  arch        the Arch package layout, when it ships the same release
+  all         every step above, in that order
+
+--release defaults to the release in compat/RELEASE; --old-release (the hub
+the hub step starts beside it) defaults to old_release there, or to the
+recorded release when --release names a newer one.
+
+--dry-run prints the plan and checks the host tools; it never touches the
+network and never starts the CLI.
+EOF
+}
+
+die() {
+  printf 'capture: %s\n' "$*" >&2
+  exit 1
+}
+
+log() {
+  printf 'capture: %s\n' "$*" >&2
+}
+
+require_tools() {
+  local tool missing=0
+  local tools=(tmux curl sed awk perl jq sha256sum git ps stat mkfifo find grep tar node python3
+    sqlite3 unshare ip mount hostname pgrep)
+  [[ "$(uname -s)" == Linux ]] || die "the kit runs on Linux only (macOS capture: see README.md)"
+  for tool in "${tools[@]}"; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      log "missing tool: $tool"
+      missing=1
+    fi
+  done
+  if command -v unshare >/dev/null 2>&1 && ! unshare --help 2>&1 | grep -q -- '--map-user'; then
+    log "unshare lacks --map-user (util-linux 2.38 or later is required)"
+    missing=1
+  fi
+  perl -MDigest::SHA -e 1 2>/dev/null || { log "perl lacks Digest::SHA"; missing=1; }
+  ((missing == 0)) || die "install the missing tools"
+}
+
+# --- release -----------------------------------------------------------------
+
+# release_field <key>: a value of compat/RELEASE (key=value lines).
+release_field() {
+  [[ -f "$RELEASE_FILE" ]] || return 0
+  awk -F= -v k="$1" '$1 == k { sub(/^[^=]*=/, ""); print; exit }' "$RELEASE_FILE"
+}
+
+resolve_releases() {
+  local recorded
+  recorded="$(release_field release)"
+  [[ -n "$RELEASE" ]] || RELEASE="$recorded"
+  [[ -n "$RELEASE" ]] || die "no release: pass --release or record one in compat/RELEASE"
+  if [[ -z "$OLD_RELEASE" ]]; then
+    if [[ -n "$recorded" && "$recorded" != "$RELEASE" ]]; then
+      OLD_RELEASE="$recorded"
+    else
+      OLD_RELEASE="$(release_field old_release)"
+    fi
+  fi
+  [[ "$RELEASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "release is not X.Y.Z: $RELEASE"
+  [[ -z "$OLD_RELEASE" || "$OLD_RELEASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "old release is not X.Y.Z: $OLD_RELEASE"
+}
+
+# platform_package: the npm package that holds this host's binary.
+platform_package() {
+  local arch
+  case "$(uname -m)" in
+    x86_64) arch=x64 ;;
+    aarch64 | arm64) arch=arm64 ;;
+    *) die "unsupported architecture: $(uname -m)" ;;
+  esac
+  printf '@cline/cli-linux-%s\n' "$arch"
+}
+
+# --- paths -------------------------------------------------------------------
+
+prefix_dir() { printf '%s/prefix/%s\n' "$ROOT" "$1"; }
+wrapper_dir() { printf '%s/lib/node_modules/cline\n' "$(prefix_dir "$1")"; }
+platform_dir() { printf '%s/node_modules/%s\n' "$(wrapper_dir "$1")" "$(platform_package)"; }
+scn_dir() { printf '%s/s/%s\n' "$ROOT" "$1"; }
+
+# --- redaction -----------------------------------------------------------------
+
+# redact: replaces the capture root by a placeholder of the same length (so
+# width-dependent screens keep their layout) and every id Cline generates by a
+# stable placeholder of the same shape and length. The id map lives in
+# <root>/idmap.tsv for the whole run, so one id reads the same in every file.
+redact() {
+  local pad repl
+  ((${#ROOT} >= 13)) || die "--root must be at least 13 characters long"
+  pad="$(printf '%*s' $((${#ROOT} - 13)) '' | tr ' ' '_')"
+  repl="/capture-root${pad}"
+  perl -0777 -e '
+    use strict; use warnings;
+    my ($root, $ph, $mapfile) = @ARGV;
+    my (%map, %placeholder, %count);
+    if (open(my $fh, "<", $mapfile)) {
+      local $/ = "\n";
+      while (<$fh>) {
+        chomp;
+        my ($k, $v, $kind) = split /\t/;
+        $map{$k} = $v;
+        $placeholder{$v} = 1;
+        $count{$kind}++;
+      }
+      close $fh;
+    }
+    open(my $out, ">>", $mapfile) or die "idmap: $!";
+    # Text that is redacted twice keeps its placeholders.
+    sub ph {
+      my ($kind, $id, $make) = @_;
+      return $id if exists $placeholder{$id};
+      return $map{$id} if exists $map{$id};
+      my $n = ++$count{$kind};
+      my $v = $make->($n);
+      $map{$id} = $v;
+      $placeholder{$v} = 1;
+      print $out "$id\t$v\t$kind\n";
+      return $v;
+    }
+    local $/;
+    my $text = <STDIN>;
+    # A path wrapped across rows keeps its line break and indentation.
+    my $re = join(q{(?:\n[ ]*)?}, map { quotemeta } split //, $root);
+    $text =~ s{$re}{
+      my ($m, $i, $gap, $o) = ($&, 0, 0, q{});
+      for my $c (split //, $m) {
+        if ($c eq "\n") { $gap = 1; $o .= $c }
+        elsif ($c eq q{ } && $gap) { $o .= $c }
+        else { $gap = 0; $o .= substr($ph, $i++, 1) }
+      }
+      $o
+    }ge;
+    # Assigned ids (c0ffee00-...) are the kit'"'"'s own and stay as they are.
+    $text =~ s{(?<![0-9a-f-])(?!c0ffee00-)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?![0-9a-f-])}{
+      ph("uuid", $1, sub { sprintf("00000000-0000-4000-8000-%012d", $_[0]) })
+    }ge;
+    $text =~ s{\b(conv_\d{13}_[0-9a-z]+)\b}{
+      my $id = $1; my $tail = length($id) - 19;
+      ph("conv", $id, sub { sprintf("conv_%013d_%s", $_[0], "0" x $tail) })
+    }ge;
+    $text =~ s{(?<![0-9a-z])(\d{13}_[0-9a-z]{5})(?![0-9a-z])}{
+      ph("session", $1, sub { sprintf("%013d_00000", $_[0]) })
+    }ge;
+    $text =~ s{(?<![0-9a-f])([0-9a-f]{40})(?![0-9a-f])}{
+      ph("sha", $1, sub { sprintf("%040d", $_[0]) })
+    }ge;
+    # Teammate task ids (<root>__teamtask__<agent>__<nanoid6>) and generated
+    # team names (team-<5 random characters>).
+    $text =~ s{(__teamtask__[A-Za-z0-9_-]+?__)([A-Za-z0-9_-]{6})(?![A-Za-z0-9_-])}{
+      $1 . ph("teamtask", $2, sub { sprintf("%06d", $_[0]) })
+    }ge;
+    # The teammate messages file (<agent>__<suffix>.messages.json) carries the
+    # same suffix as the task id and gets the same placeholder.
+    $text =~ s{((?:^|[/"\s])[A-Za-z0-9_-]+?__)([A-Za-z0-9_-]{6})(\.messages\.json)}{
+      $1 . ph("teamtask", $2, sub { sprintf("%06d", $_[0]) }) . $3
+    }gem;
+    $text =~ s{(?<![A-Za-z0-9_-])team-((?=[A-Za-z0-9_-]{0,4}[A-Z0-9])[A-Za-z0-9_-]{5})(?![A-Za-z0-9_-])}{
+      "team-" . ph("team", $1, sub { sprintf("%05d", $_[0]) })
+    }ge;
+    print $text;
+  ' -- "$ROOT" "$repl" "$ROOT/idmap.tsv"
+}
+
+# Writes stdin to $1, redacted, creating the directory.
+emit() {
+  mkdir -p "$(dirname "$1")"
+  redact >"$1"
+}
+
+# emit_json <file>: stdin JSON, redacted, long strings and host fields dropped.
+emit_json() {
+  redact | jq "$LONG_STRING_FILTER | $HOST_FIELD_FILTER" | emit "$1"
+}
+
+# Renders control bytes visibly so raw terminal output can be diffed.
+visible() {
+  LC_ALL=C sed -e 's/\x1b/<ESC>/g' -e 's/\x07/<BEL>/g' -e 's/\r/<CR>/g'
+}
+
+# --- scenario environment ------------------------------------------------------
+
+# prepare_scn <name> [options] [-- KEY=VALUE...]: a scenario with its own HOME,
+# CLINE_DIR, CLINE_DATA_DIR, TMPDIR, hub port and discovery path, a git
+# workspace and a launcher that runs the CLI in a cleared environment.
+#   --no-sandbox   no CLINE_SANDBOX (the TUI then picks its runtime itself)
+#   --promo        leave the one-time promo notices enabled
+#   --no-provider  skip `cline auth` (onboarding)
+#   --hooks        install the logging hook for every event
+#   --release V    use the CLI of release V
+prepare_scn() {
+  local name="$1" sandbox=1 promo=0 provider=1 hooks=0 release="$RELEASE" s kv ev
+  shift
+  while (($# > 0)); do
+    case "$1" in
+      --no-sandbox) sandbox=0 ;;
+      --promo) promo=1 ;;
+      --no-provider) provider=0 ;;
+      --hooks) hooks=1 ;;
+      --release)
+        release="$2"
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *) die "prepare_scn: unknown option $1" ;;
+    esac
+    shift
+  done
+  s="$(scn_dir "$name")"
+  # A CLI that was just stopped may still be writing into its data root.
+  for _ in 1 2 3 4 5; do
+    rm -rf "$s" && break
+    sleep 1
+  done
+  [[ ! -e "$s" ]] || die "cannot clear $s"
+  mkdir -p "$s/fakehome/.cline/data/settings" "$s/tmp" "$s/hub" "$s/hooklog" "$s/ws"
+  init_workspace "$s/ws"
+  # No env opt-out of telemetry exists; the setting is the only one (Cline's
+  # OpenTelemetryProvider). The namespace has no route out in any case.
+  printf '{\n  "telemetryOptOut": true,\n  "autoUpdateEnabled": false\n}\n' \
+    >"$s/fakehome/.cline/data/settings/global-settings.json"
+  # Every CLI run, also the non-interactive ones, starts in the workspace, so
+  # no host directory becomes its working directory.
+  {
+    printf '#!/bin/bash\n'
+    printf 'cd %q || exit 1\n' "$s/ws"
+    printf 'exec env -i HOME=%q PATH=%q TERM=xterm-256color LANG=C.UTF-8 \\\n' \
+      "$s/fakehome" "$ROOT/kit/bin:$(prefix_dir "$release")/bin:/usr/bin:/bin"
+    printf '  USER=capture LOGNAME=capture TMPDIR=%q \\\n' "$s/tmp"
+    printf '  CLINE_DIR=%q CLINE_DATA_DIR=%q \\\n' "$s/fakehome/.cline" "$s/fakehome/.cline/data"
+    printf '  CLINE_HUB_PORT=%q CLINE_HUB_DISCOVERY_PATH=%q \\\n' "$HUB_PORT" "$s/hub/discovery.json"
+    printf '  CLINE_NO_AUTO_UPDATE=1 CAPTURE_PROBE=probe-value \\\n'
+    if ((promo == 0)); then
+      printf '  CLINE_DISABLE_CLINE_PASS_NOTICE=1 \\\n'
+    fi
+    if ((sandbox == 1)); then
+      # Sandbox mode keeps the session in the TUI process (no hub); the data
+      # root is passed so the store stays in CLINE_DATA_DIR.
+      printf '  CLINE_SANDBOX=1 CLINE_SANDBOX_DATA_DIR=%q \\\n' "$s/fakehome/.cline/data"
+    fi
+    for kv in "$@"; do
+      printf '  %q \\\n' "$kv"
+    done
+    printf '  cline "$@"\n'
+  } >"$s/run"
+  chmod +x "$s/run"
+  if ((hooks == 1)); then
+    mkdir -p "$s/fakehome/.cline/hooks"
+    for ev in "${HOOK_EVENTS[@]}"; do
+      printf '#!/bin/bash\nexec %q %q %q\n' "$ROOT/kit/hook-log" "$s/hooklog" "$ev" \
+        >"$s/fakehome/.cline/hooks/$ev.sh"
+      chmod +x "$s/fakehome/.cline/hooks/$ev.sh"
+    done
+  fi
+  if ((provider == 1)); then
+    "$s/run" auth -p openai -k "$STUB_KEY" -m "$STUB_MODEL" -b "http://127.0.0.1:$STUB_PORT/v1" \
+      >"$s/auth.out" 2>&1 || die "cline auth failed in $name: $(tail -n 3 "$s/auth.out")"
+  fi
+}
+
+# init_workspace <dir>: a git repository with one fixed commit on main.
+init_workspace() {
+  local ws="$1"
+  printf '# capture workspace\n' >"$ws/README.md"
+  wsgit "$ws" init -q -b main .
+  wsgit "$ws" add README.md
+  wsgit "$ws" commit -q -m 'capture workspace'
+}
+
+wsgit() {
+  local ws="$1"
+  shift
+  env -i PATH=/usr/bin:/bin HOME="$ROOT/kit" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    "${GIT_IDENTITY[@]}" git -C "$ws" "$@"
+}
+
+# --- model stub -------------------------------------------------------------------
+
+STUB_PID=""
+
+# stub_start <name> <script json>: serves the scripted replies on STUB_PORT
+# until the next stub_start or stub_stop.
+stub_start() {
+  local name="$1" script="$2" dir="$ROOT/stub/$1"
+  stub_stop
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf '%s\n' "$script" | jq . >"$dir/script.json"
+  : >"$dir/requests.jsonl"
+  python3 -I "$ROOT/kit/model-stub" --port "$STUB_PORT" --script "$dir/script.json" \
+    --log "$dir/requests.jsonl" 2>"$dir/stub.err" &
+  STUB_PID=$!
+  for _ in $(seq 1 50); do
+    if (exec 3<>"/dev/tcp/127.0.0.1/$STUB_PORT") 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  die "model stub $name did not start: $(cat "$dir/stub.err")"
+}
+
+stub_stop() {
+  if [[ -n "$STUB_PID" ]]; then
+    kill "$STUB_PID" 2>/dev/null || true
+    wait "$STUB_PID" 2>/dev/null || true
+    STUB_PID=""
+  fi
+}
+
+# stub_requests <name> <dest>: the request log of a stub run (no content).
+stub_requests() {
+  emit "$2" <"$ROOT/stub/$1/requests.jsonl"
+}
+
+# stub_wait_reply <name> <reply index> <timeout>: waits until the stub served
+# that scripted reply.
+stub_wait_reply() {
+  local log="$ROOT/stub/$1/requests.jsonl"
+  for _ in $(seq 1 $(($3 * 5))); do
+    jq -e --argjson i "$2" 'select(.reply == $i)' "$log" >/dev/null 2>&1 && return 0
+    sleep 0.2
+  done
+  log "stub $1 did not serve reply $2"
+  return 1
+}
+
+# --- pty driver (tmux) ---------------------------------------------------------------
+
+TMUX_SOCKET="cline-capture"
+RAW_FILE=""
+
+# The operator's tmux configuration must not change the captured screens.
+tm() { tmux -L "$TMUX_SOCKET" -f /dev/null "$@"; }
+
+# pty_start <scn> <width> <cline args...>: starts the CLI in a detached
+# terminal in the scenario workspace. The raw output stream is recorded from
+# the first byte, and the pane stays after the CLI exits so the exit output
+# can be read.
+pty_start() {
+  local scn="$1" width="$2" s gate
+  shift 2
+  s="$(scn_dir "$scn")"
+  RAW_FILE="$s/raw-$width.bin"
+  : >"$RAW_FILE"
+  gate="$s/gate"
+  rm -f "$gate"
+  mkfifo "$gate"
+  tm kill-server 2>/dev/null || true
+  tm new-session -d -x "$width" -y "$HEIGHT" -c "$s/ws" \
+    "read -r _ < $(printf '%q' "$gate"); exec $(printf '%q ' "$s/run" "$@")"
+  tm set-option -g remain-on-exit on
+  tm pipe-pane -t 0 "cat >> $(printf '%q' "$RAW_FILE")"
+  printf 'go\n' >"$gate"
+  rm -f "$gate"
+}
+
+pty_stop() {
+  tm kill-server 2>/dev/null || true
+  sleep 1
+}
+
+# The pane the driver reads and types into (a session name or 0).
+PTY_TARGET=0
+
+pty_screen() { tm capture-pane -p -t "$PTY_TARGET"; }
+pty_pid() { tm display-message -p -t "$PTY_TARGET" '#{pane_pid}'; }
+pty_dead() { [[ "$(tm display-message -p -t "$PTY_TARGET" '#{pane_dead}' 2>/dev/null)" == 1 ]]; }
+
+# pty_wait <extended-regex> [timeout]: waits until the screen matches.
+pty_wait() {
+  local re="$1" limit="${2:-$WAIT_TIMEOUT}" start
+  start="$(date +%s%N)"
+  while ! pty_screen | grep -Eq -- "$re"; do
+    sleep "$POLL"
+    if (($(date +%s%N) - start >= limit * 1000000000)); then
+      log "timeout waiting for /$re/"
+      return 1
+    fi
+  done
+}
+
+# pty_idle: waits for the composer and the mode footer, then lets the frame
+# settle; input typed into the first frame is lost.
+pty_idle() {
+  pty_wait '❯' "${1:-$WAIT_TIMEOUT}" || return 1
+  pty_wait '\(Tab\)' 5 || return 1
+  sleep "$SETTLE"
+}
+
+pty_keys() { tm send-keys -t "$PTY_TARGET" "$@"; }
+pty_type() { tm send-keys -t "$PTY_TARGET" -l "$1"; }
+
+# pty_submit <text> [expected-regex]: types the text and submits it. An Enter
+# sent before the composer takes input is dropped, so it is repeated until
+# the expected text shows.
+pty_submit() {
+  local text="$1" expect="${2:-}"
+  pty_type "$text"
+  sleep "$TYPE_PAUSE"
+  pty_keys Enter
+  [[ -n "$expect" ]] || return 0
+  for _ in 1 2 3; do
+    pty_wait "$expect" 10 && return 0
+    pty_keys Enter
+  done
+  return 1
+}
+
+# pty_command <slash command>: runs a slash command; the command menu opens on
+# `/`, so Escape closes it before Enter would pick a different entry.
+pty_command() {
+  pty_type "$1"
+  sleep "$TYPE_PAUSE"
+  pty_keys Enter
+}
+
+# pty_quit: leaves the CLI through /quit and waits for the process to exit.
+pty_quit() {
+  pty_command '/quit'
+  for _ in $(seq 1 50); do
+    pty_dead && return 0
+    sleep 0.2
+  done
+  log "the CLI did not exit on /quit; sending Ctrl+C"
+  pty_keys C-c
+  sleep 1
+  pty_keys C-c
+  sleep 2
+}
+
+# pty_snap <file>: the redacted visible screen, trailing blank rows trimmed;
+# tmux's own line for an exited pane is dropped.
+pty_snap() {
+  pty_screen | snap_text | emit "$1"
+}
+
+snap_text() {
+  sed -e '/^Pane is dead/d' | sed -e :a -e '/^[[:space:]]*$/{$d;N;ba' -e '}'
+}
+
+# MISSES collects every expectation of the current step that did not hold:
+# a screen, a reply, a hook or a state the evidence depends on. A step with
+# any miss keeps its staged files out of compat/ and fails the run.
+MISSES=()
+
+# miss <what>: records an unmet expectation.
+miss() {
+  log "missed: $*"
+  MISSES+=("$*")
+}
+
+# need <what> <command...>: runs the command and records a miss when it
+# fails; returns the command's status.
+need() {
+  local what="$1" rc=0
+  shift
+  "$@" || rc=$?
+  ((rc == 0)) || miss "$what"
+  return "$rc"
+}
+
+# expect <what> <command...>: as need, for a call site that does not branch
+# on the result.
+expect() {
+  need "$@" || return 0
+}
+
+# snap_index <scenario> <width> <captured|missed>: the screen index records
+# which screens a run reached, so a missing file is never silent.
+snap_index() {
+  printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$OUT/screens/INDEX.tsv"
+}
+
+# snap_wait <scenario> <width> <regex> [timeout]: waits until the screen
+# matches the state regex and saves it as screens/<scenario>/<width>.txt.
+# Every screen in compat/ goes through it. On a timeout the screen that showed
+# instead is saved as <width>.unmatched.txt, indexed as missed and recorded as
+# a miss.
+snap_wait() {
+  local scn="$1" width="$2" re="$3" limit="${4:-$WAIT_TIMEOUT}"
+  local screen
+  if pty_wait "$re" "$limit"; then
+    sleep 0.5
+    # The saved screen is the one the regex was checked against.
+    screen="$(pty_screen)"
+    if grep -Eq -- "$re" <<<"$screen"; then
+      printf '%s\n' "$screen" | snap_text | emit "$OUT/screens/$scn/$width.txt"
+      snap_index "$scn" "$width" captured
+      return 0
+    fi
+  fi
+  pty_snap "$OUT/screens/$scn/$width.unmatched.txt"
+  snap_index "$scn" "$width" missed
+  miss "screen $scn at $width: /$re/"
+  return 1
+}
+
+# snap <scenario> <width> <regex> [timeout]: as snap_wait, for a call site
+# that does not branch on the result.
+snap() {
+  snap_wait "$@" || return 0
+}
+
+# osc_titles <raw>: terminal title sequences, consecutive duplicates removed.
+osc_titles() {
+  LC_ALL=C grep -a -o $'\x1b\\][02];[^\x07\x1b]*' "$1" | visible | uniq || true
+}
+
+# osc_kinds <raw>: the OSC numbers the CLI sends, with counts.
+osc_kinds() {
+  LC_ALL=C grep -a -o $'\x1b\\][0-9]*' "$1" | visible | sort | uniq -c | sort -k2 || true
+}
+
+# --- processes ------------------------------------------------------------------------
+
+# proc_tree <pid>: comm, session-leader flag and argv of a process and its
+# descendants, indented by depth; pids are left out.
+proc_tree() {
+  local pid="$1" depth="${2:-0}" comm args leader child
+  [[ -r "/proc/$pid/comm" ]] || return 0
+  comm="$(cat "/proc/$pid/comm")"
+  args="$(tr '\0' ' ' <"/proc/$pid/cmdline" | sed 's/ $//')"
+  leader=""
+  [[ "$(ps -o sid= -p "$pid" | tr -d ' ')" == "$pid" ]] && leader=" [session leader]"
+  printf '%*s%s%s: %s\n' $((depth * 2)) '' "$comm" "$leader" "$args"
+  for child in $(ps -o pid= --ppid "$pid" | sort -n); do
+    proc_tree "$child" $((depth + 1))
+  done
+}
+
+# is_hub_daemon <pid>: the process is a Cline binary (comm cline or .cline)
+# with the argument --cline-hub-daemon. Matching the exact argument keeps a
+# shell whose command line merely contains the text out.
+is_hub_daemon() {
+  local comm
+  comm="$(cat "/proc/$1/comm" 2>/dev/null)" || return 1
+  [[ "$comm" == cline || "$comm" == .cline ]] || return 1
+  tr '\0' '\n' <"/proc/$1/cmdline" 2>/dev/null | grep -qx -- '--cline-hub-daemon'
+}
+
+# hub_daemons: pids of hub daemons in this namespace.
+hub_daemons() {
+  local pid
+  for pid in $(pgrep -f -- '--cline-hub-daemon' || true); do
+    is_hub_daemon "$pid" && printf '%s\n' "$pid"
+  done
+  return 0
+}
+
+# hub_daemons_tree: every hub daemon with its parent's comm, as proc_tree lines.
+hub_daemons_tree() {
+  local pid
+  for pid in $(hub_daemons); do
+    printf 'parent: %s\n' "$(cat "/proc/$(awk '/^PPid:/ {print $2}' "/proc/$pid/status")/comm")"
+    proc_tree "$pid"
+  done
+}
+
+# assert_no_hub <context>: fails when a hub daemon runs in the namespace.
+assert_no_hub() {
+  local left
+  left="$(hub_daemons)"
+  [[ -z "$left" ]] || die "hub daemon left after $1: $(hub_daemons_tree | redact)"
+}
+
+# kill_hubs: stops the hub daemons this namespace started.
+kill_hubs() {
+  local pid
+  for pid in $(hub_daemons); do
+    kill "$pid" 2>/dev/null || true
+  done
+  sleep 1
+  for pid in $(hub_daemons); do
+    kill -9 "$pid" 2>/dev/null || true
+  done
+}
+
+# --- hooks and store --------------------------------------------------------------------
+
+# wait_hook <scn> <event-glob> [timeout]: waits until a matching hook was logged.
+wait_hook() {
+  local logdir
+  logdir="$(scn_dir "$1")/hooklog"
+  for _ in $(seq 1 $((${3:-20} * 5))); do
+    compgen -G "$logdir/*-$2.json" >/dev/null && return 0
+    sleep 0.2
+  done
+  log "no $2 hook in $1"
+  return 1
+}
+
+# collect_hooks <scn> <dest> [event...]: the redacted hook records, one file
+# per call, numbered in call order, and their SUMMARY.tsv; the hook log is
+# emptied. Each event named must be among the calls, or it is a miss; with no
+# event named any set of calls, none included, is evidence.
+collect_hooks() {
+  local scn="$1" logdir dest="$2" f n=0 event
+  shift 2
+  logdir="$(scn_dir "$scn")/hooklog"
+  sleep 1
+  rm -rf "$dest"
+  mkdir -p "$dest"
+  for f in "$logdir"/*.json; do
+    [[ -e "$f" ]] || continue
+    event="$(basename "$f" .json)"
+    event="${event#*-}"
+    n=$((n + 1))
+    emit_json "$(printf '%s/%03d-%s.json' "$dest" "$n" "$event")" <"$f"
+    rm -f "$f"
+  done
+  hook_summary "$dest"
+  for event in "$@"; do
+    compgen -G "$dest/[0-9]*-$event.json" >/dev/null || miss "hook $event in ${dest#"$OUT"/}"
+  done
+}
+
+# hook_summary <dest>: event, hookName, rootSessionId, agent ids and the
+# ancestor comms of every collected hook, one line each.
+hook_summary() {
+  local dir="$1"
+  for f in "$dir"/[0-9]*.json; do
+    [[ -e "$f" ]] || continue
+    jq -r --arg f "$(basename "$f")" '[$f, .event, (.payload.hookName // "-"),
+      (.payload.sessionContext.rootSessionId // "-"), (.payload.agent_id // "-"),
+      (.payload.parent_agent_id // "-"), ([.ancestors[].comm] | join(">"))] | @tsv' "$f"
+  done >"$dir/SUMMARY.tsv"
+}
+
+# store_rows <scn> <dest>: the sessions table (JSON columns parsed), the team
+# tables that hold rows, the session manifests, the envelope of every
+# messages file (no message content) and the store tree of a scenario.
+store_rows() {
+  local data dest="$2" f t
+  data="$(scn_dir "$1")/fakehome/.cline/data"
+  rm -rf "$dest"
+  mkdir -p "$dest"
+  if [[ -f "$data/db/sessions.db" ]]; then
+    sqlite3 -readonly -json "$data/db/sessions.db" 'select * from sessions order by started_at, session_id' |
+      jq '(. // []) | map(with_entries(if (.key | endswith("_json")) and (.value | type) == "string"
+        then .value |= (fromjson? // .) else . end))' | emit_json "$dest/sessions-table.json"
+  fi
+  if [[ -f "$data/db/teams.db" ]]; then
+    for t in $(sqlite3 -readonly "$data/db/teams.db" "select name from sqlite_master where type = 'table' order by name"); do
+      sqlite3 -readonly -json "$data/db/teams.db" "select * from \"$t\"" | jq -c --arg t "$t" '{($t): (. // [])}'
+    done | jq -s 'add | {tables: keys, rows: with_entries(select(.value | length > 0))}' |
+      emit_json "$dest/teams-db.json"
+  fi
+  find "$data/sessions" -mindepth 2 -maxdepth 2 -name '*.json' -not -name '*.messages.json' 2>/dev/null |
+    awk -F/ '{ d = $(NF - 1); n = $NF; sub(/\.json$/, "", n); if (d == n) print }' | sort |
+    while IFS= read -r f; do cat "$f"; done | jq -s 'sort_by(.started_at // "")' | emit_json "$dest/manifests.json"
+  find "$data/sessions" -name '*.messages.json' 2>/dev/null | sort | while IFS= read -r f; do
+    jq -c --arg f "$f" '{file: $f, keys: keys, agent, sessionId,
+      messages: (.messages | length? // null)}' "$f"
+  done | jq -s '.' | emit_json "$dest/messages-envelopes.json"
+  (cd "$data" && find . -not -path './cache*' -not -path './logs*' | sort) | emit "$dest/tree.txt"
+}
+
+# --- steps --------------------------------------------------------------------------------
+
+# fetch_release <release> <prefix>: the wrapper and platform tarballs, checked
+# against the registry's sha512 integrity (and the integrity recorded in
+# compat/RELEASE for that release), unpacked as npm lays out a global install.
+fetch_release() {
+  local release="$1" prefix="$2" dl="$ROOT/dl/$1" pkg name meta tarball integrity got pinned dir
+  mkdir -p "$dl"
+  for pkg in cline "$(platform_package)"; do
+    name="${pkg//\//%2f}"
+    meta="$dl/$(basename "$pkg").json"
+    curl -fsS --proto '=https' "$REGISTRY/$name/$release" -o "$meta"
+    tarball="$(jq -er '.dist.tarball' "$meta")"
+    integrity="$(jq -er '.dist.integrity' "$meta")"
+    [[ "$tarball" == "$REGISTRY/"* ]] || die "tarball outside the registry: $tarball"
+    [[ "$integrity" == sha512-* ]] || die "integrity is not sha512: $integrity"
+    if [[ "$(release_field release)" == "$release" ]]; then
+      pinned="$(release_field "$pkg.integrity")"
+      [[ -z "$pinned" || "$pinned" == "$integrity" ]] || die "registry integrity of $pkg differs from compat/RELEASE"
+    fi
+    curl -fsS --proto '=https' "$tarball" -o "$dl/$(basename "$pkg").tgz"
+    got="sha512-$(perl -MDigest::SHA -e 'my $d = Digest::SHA->new(512); $d->addfile($ARGV[0]); my $b = $d->b64digest; $b .= "=" while length($b) % 4; print $b' "$dl/$(basename "$pkg").tgz")"
+    [[ "$got" == "$integrity" ]] || die "integrity mismatch for $pkg $release"
+    printf '%s\t%s\n' "$pkg" "$integrity" >>"$dl/integrity.tsv"
+  done
+  rm -rf "$prefix"
+  dir="$prefix/lib/node_modules/cline"
+  mkdir -p "$dir" "$prefix/bin"
+  tar -xzf "$dl/cline.tgz" -C "$dir" --strip-components=1 --no-same-owner
+  dir="$dir/node_modules/$(platform_package)"
+  mkdir -p "$dir"
+  tar -xzf "$dl/$(basename "$(platform_package)").tgz" -C "$dir" --strip-components=1 --no-same-owner
+  ln -s ../lib/node_modules/cline/bin/cline "$prefix/bin/cline"
+  printf '%s\n' "$release" >"$prefix/.release"
+}
+
+step_install() {
+  local release
+  for release in "$RELEASE" ${OLD_RELEASE:+"$OLD_RELEASE"}; do
+    if [[ -f "$(prefix_dir "$release")/.release" ]]; then
+      log "already installed: $release"
+      continue
+    fi
+    rm -f "$ROOT/dl/$release/integrity.tsv"
+    fetch_release "$release" "$(prefix_dir "$release")"
+    log "installed $release"
+  done
+}
+
+step_version() {
+  local w p bin s c
+  w="$(wrapper_dir "$RELEASE")"
+  p="$(platform_dir "$RELEASE")"
+  bin="$p/bin/cline"
+  [[ -x "$bin" ]] || die "not installed; run the install step"
+  [[ "$(jq -r .version "$w/package.json")" == "$RELEASE" ]] || die "installed wrapper is not $RELEASE"
+  {
+    printf 'release=%s\n' "$RELEASE"
+    [[ -z "$OLD_RELEASE" ]] || printf 'old_release=%s\n' "$OLD_RELEASE"
+    awk -F'\t' '{ printf "%s.integrity=%s\n", $1, $2 }' "$ROOT/dl/$RELEASE/integrity.tsv"
+    printf '%s.bin.sha256=%s\n' "$(platform_package)" "$(sha256sum "$bin" | awk '{print $1}')"
+  } >"$OUT/RELEASE"
+  prepare_scn version --no-provider
+  s="$(scn_dir version)"
+  {
+    printf '$ cline --version\n'
+    "$s/run" --version 2>&1
+    printf '$ cline version\n'
+    "$s/run" version 2>&1
+  } | emit "$OUT/install/version.txt"
+  expect "version: --version is not $RELEASE" test "$("$s/run" --version 2>&1)" == "$RELEASE"
+  mkdir -p "$OUT/help"
+  "$s/run" --help 2>&1 | emit "$OUT/help/cline.txt"
+  for c in $("$s/run" --help 2>&1 | awk '/^Commands:/ { on = 1; next } on && /^  [a-z]/ { print $1 } on && /^$/ { exit }' | sed 's/|.*//'); do
+    [[ "$c" == help ]] && continue
+    "$s/run" "$c" --help >"$s/help.txt" 2>&1 || miss "version: $c --help failed"
+    emit "$OUT/help/$c.txt" <"$s/help.txt"
+  done
+  expect "version: no subcommand help" compgen -G "$OUT/help/[a-z]*.txt" >/dev/null
+  {
+    printf 'wrapper package: cline %s (bin: %s)\n' "$(jq -r .version "$w/package.json")" "$(jq -c .bin "$w/package.json")"
+    printf 'wrapper scripts: %s\n' "$(jq -c .scripts "$w/package.json")"
+    printf 'optionalDependencies: %s\n' "$(jq -c '.optionalDependencies | keys' "$w/package.json")"
+    printf 'platform package: %s %s\n' "$(platform_package)" "$(jq -r .version "$p/package.json")"
+    printf 'binary: %s bytes, sha256 %s\n' "$(stat -c %s "$bin")" "$(sha256sum "$bin" | awk '{print $1}')"
+    printf 'binary format: %s\n' "$([[ "$(head -c 4 "$bin" | tail -c 3)" == ELF ]] && echo ELF || echo other)"
+    printf '\nlayout below the prefix (npm global install):\n'
+    (cd "$(prefix_dir "$RELEASE")" && find bin lib -maxdepth 6 -not -path '*/node_modules/*/node_modules/*' | sort)
+  } | emit "$OUT/install/layout.txt"
+
+  # Process tree under the Node wrapper, without and with the bin/.cline
+  # cache that npm's postinstall creates.
+  rm -f "$w/bin/.cline"
+  process_tree_capture nocache
+  env -i HOME="$s/fakehome" PATH=/usr/bin:/bin CLINE_DIR="$s/fakehome/.cline" CLINE_DATA_DIR="$s/fakehome/.cline/data" \
+    CLINE_NO_AUTO_UPDATE=1 node "$w/postinstall.mjs" 2>&1 | emit "$OUT/install/postinstall.txt"
+  [[ -e "$w/bin/.cline" ]] || die "postinstall created no bin/.cline"
+  printf 'bin/.cline: %s bytes, same inode as the platform binary: %s\n' "$(stat -c %s "$w/bin/.cline")" \
+    "$([[ "$(stat -c %i "$w/bin/.cline")" == "$(stat -c %i "$bin")" ]] && echo yes || echo no)" |
+    emit "$OUT/install/postinstall-cache.txt"
+  process_tree_capture cache
+
+  # Settings: the throwaway global-settings.json after a TUI start, and what
+  # the telemetry self check reports with telemetryOptOut set.
+  "$s/run" --telemetry-selfcheck >"$s/selfcheck.txt" 2>&1 || miss "version: --telemetry-selfcheck failed"
+  { grep -v -i -E 'key|token|secret|header' "$s/selfcheck.txt" || true; } |
+    emit "$OUT/install/telemetry-selfcheck.txt"
+  expect "version: empty telemetry self check" test -s "$OUT/install/telemetry-selfcheck.txt"
+  jq '{telemetryOptOut, autoUpdateEnabled, toolAutoApprove} | with_entries(select(.value != null))' \
+    "$s/fakehome/.cline/data/settings/global-settings.json" | emit "$OUT/install/settings-after-start.json"
+  jq -r 'keys[]' "$s/fakehome/.cline/data/settings/global-settings.json" | emit "$OUT/install/settings-keys.txt"
+  (cd "$s/fakehome/.cline" && find . | sort) | emit "$OUT/install/first-start-tree.txt"
+}
+
+# process_tree_capture <label>: starts the TUI (onboarding, no provider) at the
+# reference width and records the process tree below the pane.
+process_tree_capture() {
+  pty_start version "$REF_WIDTH"
+  if pty_wait 'Welcome to Cline|❯' 30; then
+    sleep 2
+    proc_tree "$(pty_pid)" | emit "$OUT/install/process-$1.txt"
+  else
+    miss "process tree $1: the TUI did not start"
+  fi
+  pty_stop
+}
+
+# Onboarding without a provider: welcome, provider picker, API-key form and
+# the sign-in screens. Sign-in starts inside the namespace, so no request
+# leaves it, and the browser hand-off is the kit's xdg-open logger. Only the
+# OpenAI Compatible form is saved, with the loopback stub and the placeholder
+# key.
+step_onboarding() {
+  local w
+  stub_start onboarding '[]'
+  for w in "${WIDTHS[@]}"; do
+    prepare_scn onboarding --no-provider
+    pty_start onboarding "$w"
+    if snap_wait onboarding "$w" 'Welcome to Cline|Connect a model'; then
+      sleep "$SETTLE"
+      # Bring your own provider is the fourth card.
+      pty_keys Down
+      sleep 0.3
+      pty_keys Down
+      sleep 0.3
+      pty_keys Down
+      sleep 0.3
+      [[ "$w" == "$REF_WIDTH" ]] && snap onboarding-byo-selected "$w" 'Bring your own provider +→' 5
+      pty_keys Enter
+      if snap_wait provider-picker "$w" 'Choose a provider|Choose a$'; then
+        pty_type 'openai compatible'
+        sleep 1
+        [[ "$w" == "$REF_WIDTH" ]] && snap provider-picker-search "$w" '❯ OpenAI Compatible' 5
+        pty_keys Enter
+        if snap_wait api-key-form "$w" 'Enter to save|to save, Esc' 15 && [[ "$w" == "$REF_WIDTH" ]]; then
+          onboarding_submit
+        fi
+      fi
+    fi
+    pty_stop
+  done
+  # Sign-in cards at the reference width; each starts in a fresh scenario.
+  local card n names=(signin-cline signin-clinepass signin-chatgpt)
+  for card in 0 1 2; do
+    prepare_scn "${names[card]}" --no-provider
+    pty_start "${names[card]}" "$REF_WIDTH"
+    if need "${names[card]}: onboarding" pty_wait 'Welcome to Cline'; then
+      sleep "$SETTLE"
+      for ((n = 0; n < card; n++)); do
+        pty_keys Down
+        sleep 0.3
+      done
+      pty_keys Enter
+      snap "${names[card]}" "$REF_WIDTH" 'Signing in with' 10
+      # The first answer of the sign-in flow: an error without network, or
+      # the wait screen.
+      sleep 4
+      snap "${names[card]}-after" "$REF_WIDTH" 'getaddrinfo|ETIMEOUT|Waiting for sign-in|Your code' 20
+    fi
+    pty_stop
+  done
+  if need "the sign-in flow handed no URL to xdg-open" test -s "$ROOT/kit/opened.log"; then
+    sed -E 's/([?&](state|code_challenge|nonce)=)[^& ]*/\1<redacted>/g' "$ROOT/kit/opened.log" |
+      emit "$OUT/screens/signin-opened-urls.txt"
+  fi
+  assert_no_hub onboarding
+}
+
+# onboarding_submit: fills the OpenAI Compatible form with the loopback stub
+# and the placeholder key and saves it, which leads to the model step (a model
+# list, or a model id form). The base URL field holds the OpenAI default and
+# has the focus. The filled form shows the key as typed, so it is not saved.
+onboarding_submit() {
+  local n
+  for ((n = 0; n < 40; n++)); do
+    pty_keys BSpace
+  done
+  pty_type "http://127.0.0.1:$STUB_PORT/v1"
+  pty_keys Tab
+  sleep 0.3
+  pty_keys Tab
+  sleep 0.3
+  pty_type "$STUB_KEY"
+  sleep 0.5
+  pty_keys Enter
+  snap model-step "$REF_WIDTH" 'Choose a model|Set model ID' 20
+}
+
+# One-time promo modals: shown on a launch with a provider unless
+# CLINE_DISABLE_CLINE_PASS_NOTICE=1; each modal shows once per data root.
+step_promo() {
+  local w n
+  stub_start promo '[]'
+  for w in "${WIDTHS[@]}"; do
+    prepare_scn promo --promo
+    pty_start promo "$w"
+    snap promo "$w" 'Press Enter'
+    pty_stop
+  done
+  # Successive launches on one data root: which modal shows each time. The
+  # modal draws over the composer, so each launch waits for the composer and
+  # then for the frame to settle before the screen is read.
+  prepare_scn promo-seq --promo
+  for n in 1 2 3; do
+    pty_start promo-seq "$REF_WIDTH"
+    expect "promo-seq launch $n: composer" pty_wait '❯'
+    sleep 3
+    snap "promo-launch-$n" "$REF_WIDTH" 'Press Enter to open|❯' 5
+    # Escape closes a modal without opening anything.
+    pty_keys Escape
+    sleep 1
+    pty_quit
+    pty_stop
+  done
+  if need "promo-seq wrote no cli-notices.json" test -f "$(scn_dir promo-seq)/fakehome/.cline/data/settings/cli-notices.json"; then
+    jq '.' "$(scn_dir promo-seq)/fakehome/.cline/data/settings/cli-notices.json" |
+      emit "$OUT/screens/promo-notices-state.json"
+  fi
+  # The suppressing variable: three launches on a fresh data root with it
+  # set, as many as the modals above need.
+  prepare_scn promo-off
+  : >"$(scn_dir promo-off)/modals"
+  for n in 1 2 3; do
+    pty_start promo-off "$REF_WIDTH"
+    expect "promo-off launch $n: composer" pty_wait '❯'
+    sleep 3
+    snap "promo-suppressed-launch-$n" "$REF_WIDTH" 'Press Enter to open|❯' 5
+    if pty_screen | grep -q 'Press Enter to open'; then
+      printf 'launch %s: modal shown\n' "$n" >>"$(scn_dir promo-off)/modals"
+      pty_keys Escape
+      sleep 1
+    else
+      printf 'launch %s: no modal\n' "$n" >>"$(scn_dir promo-off)/modals"
+    fi
+    pty_quit
+    pty_stop
+  done
+  {
+    printf 'CLINE_DISABLE_CLINE_PASS_NOTICE=1, three launches on one data root:\n'
+    cat "$(scn_dir promo-off)/modals"
+    printf 'cli-notices.json: %s\n' \
+      "$([[ -e "$(scn_dir promo-off)/fakehome/.cline/data/settings/cli-notices.json" ]] && echo written || echo absent)"
+  } | emit "$OUT/screens/promo-suppressed-state.txt"
+  stub_stop
+  assert_no_hub promo
+}
+
+# Idle, working and tool-row screens of stub turns; titles and OSC kinds.
+step_turn() {
+  local w raw
+  for w in "${WIDTHS[@]}"; do
+    stub_start turn "$(jq -nc --argjson hold "$HOLD" '[
+      {text: "Hello from the loopback stub.", delay: $hold},
+      {tool: "run_commands", args: {commands: ["sleep 8"]}},
+      {text: "Command done."}]')"
+    prepare_scn turn
+    pty_start turn "$w"
+    if ! snap_wait idle-home "$w" '❯'; then
+      pty_stop
+      continue
+    fi
+    sleep "$SETTLE"
+    [[ "$w" == "$REF_WIDTH" ]] && proc_tree "$(pty_pid)" | emit "$OUT/install/process-sandbox-tui.txt"
+    pty_submit 'hello there'
+    snap working-thinking "$w" 'Thinking' 10
+    if need "turn at $w: the stub reply" pty_wait 'Hello from' 20; then
+      sleep 1
+      snap idle-chat "$w" '❯' 5
+    fi
+    pty_submit 'run the long command'
+    snap working-tool-row "$w" 'run_commands' 20
+    if [[ "$w" == "$REF_WIDTH" ]]; then
+      snap turn-done "$w" 'Command done' 30
+      raw="$RAW_FILE"
+      osc_titles "$raw" | emit "$OUT/terminal/titles.txt"
+      osc_kinds "$raw" | emit "$OUT/terminal/osc-kinds.txt"
+      head -c 1200 "$raw" | visible | emit "$OUT/terminal/startup-bytes.txt"
+      { LC_ALL=C grep -a -o $'\x1b\\[?[0-9;]*[hl]' "$raw" || true; } | visible | sort | uniq -c | sort -k2 |
+        emit "$OUT/terminal/dec-modes.txt"
+      if LC_ALL=C grep -a -q $'\x07' "$raw"; then
+        printf 'BEL outside OSC: %s\n' "$(LC_ALL=C tr -cd '\007' <"$raw" | wc -c)"
+      fi | emit "$OUT/terminal/bel.txt"
+      stub_requests turn "$OUT/stub/turn-requests.jsonl"
+    else
+      expect "turn at $w: the tool reply" pty_wait 'Command done' 30
+    fi
+    pty_quit
+    [[ "$w" == "$REF_WIDTH" ]] && snap exit-summary "$w" 'Session Summary' 10
+    pty_stop
+    assert_no_hub "turn at $w"
+  done
+  stub_stop
+}
+
+# Approval (auto-approve off), question picker and fork confirm screens.
+step_dialogs() {
+  local w
+  for w in "${WIDTHS[@]}"; do
+    stub_start dialogs '[
+      {"tool": "run_commands", "args": {"commands": ["touch approved-by-capture.txt"]}},
+      {"text": "Command done."},
+      {"tool": "ask_question", "args": {"question": "Which color do you prefer?", "options": ["Red", "Blue", "Green"]}},
+      {"text": "Thanks for answering."}]'
+    prepare_scn dialogs
+    pty_start dialogs "$w" --auto-approve false
+    if ! need "dialogs at $w: composer" pty_idle; then
+      pty_stop
+      continue
+    fi
+    pty_submit 'run a command'
+    if snap_wait approval "$w" 'Cline needs|Approve tool call' 20; then
+      pty_keys y
+      if [[ "$w" == "$REF_WIDTH" ]]; then
+        snap_wait approval-approved "$w" 'Command done' 20 &&
+          printf 'input: y\nfile created: %s\n' \
+            "$([[ -e "$(scn_dir dialogs)/ws/approved-by-capture.txt" ]] && echo yes || echo no)" |
+          emit "$OUT/screens/approval-approved/effect.txt"
+      else
+        expect "dialogs at $w: the reply after approval" pty_wait 'Command done' 20
+      fi
+    fi
+    pty_submit 'ask me something'
+    if snap_wait question "$w" 'Cline is asking|Type a' 20; then
+      pty_keys 1
+      sleep 0.5
+      pty_keys Enter
+      if [[ "$w" == "$REF_WIDTH" ]]; then
+        snap question-answered "$w" 'Thanks for' 20
+      else
+        expect "dialogs at $w: the reply after the answer" pty_wait 'Thanks for' 20
+      fi
+    fi
+    pty_command '/fork'
+    snap fork-confirm "$w" 'Create a fork|N/Esc' 10
+    # n cancels the confirm (Y/Enter confirm, N/Esc cancel).
+    pty_keys n
+    sleep 1
+    pty_quit
+    pty_stop
+    assert_no_hub "dialogs at $w"
+  done
+  # Other answers to the approval box, each recorded with the exact input:
+  # n, Enter alone, `ok` and Enter, and a line that starts with y.
+  local key input
+  for key in n enter ok text; do
+    case "$key" in
+      n) input='n' ;;
+      enter) input='Enter' ;;
+      ok) input="'ok' then Enter" ;;
+      text) input="'yes please' then Enter" ;;
+    esac
+    stub_start "deny-$key" '[
+      {"tool": "run_commands", "args": {"commands": ["touch denied-by-capture.txt"]}},
+      {"text": "Understood."}]'
+    prepare_scn "deny-$key"
+    pty_start "deny-$key" "$REF_WIDTH" --auto-approve false
+    if ! need "approval-$key: composer" pty_idle; then
+      pty_stop
+      continue
+    fi
+    pty_submit 'run a command'
+    if need "approval-$key: the approval box" pty_wait '\[y\] Approve' 20; then
+      sleep 1
+      case "$key" in
+        n) pty_keys n ;;
+        enter) pty_keys Enter ;;
+        ok | text)
+          pty_type "$([[ "$key" == ok ]] && echo ok || echo 'yes please')"
+          sleep "$TYPE_PAUSE"
+          pty_keys Enter
+          ;;
+      esac
+      sleep 4
+      # The box still open, or the turn finished either way.
+      snap "approval-$key" "$REF_WIDTH" '\[y\] Approve|Understood' 20
+      printf 'input: %s\nfile created: %s\napproval box still shown: %s\n' "$input" \
+        "$([[ -e "$(scn_dir "deny-$key")/ws/denied-by-capture.txt" ]] && echo yes || echo no)" \
+        "$(pty_screen | grep -q '\[y\] Approve' && echo yes || echo no)" |
+        emit "$OUT/screens/approval-$key/effect.txt"
+    fi
+    pty_quit
+    pty_stop
+  done
+  stub_stop
+  assert_no_hub dialogs
+}
+
+# Hook payloads under the launch shape `cline --id <uuid>` in sandbox mode:
+# a text turn, a subagent, /clear, /fork, then a relaunch that resumes the id.
+# A second scenario starts without --id (the TaskStart path).
+step_hooks() {
+  stub_start hooks '[
+    {"text": "First turn reply."},
+    {"tool": "spawn_agent", "args": {"systemPrompt": "You are a helper.", "task": "Say done."}},
+    {"text": "Sub agent says done.", "unless_tool": "team_status"},
+    {"text": "Parent saw the subagent."},
+    {"text": "Reply after clear."},
+    {"text": "Reply after fork."},
+    {"text": "Reply after resume."}]'
+  prepare_scn hooks --hooks
+  pty_start hooks "$REF_WIDTH" --id "$ID_ROOT"
+  if ! need "hooks: composer" pty_idle; then
+    pty_stop
+    return 0
+  fi
+  expect "hooks: first reply" pty_submit 'first turn' 'First turn reply'
+  expect "hooks: first TaskComplete" wait_hook hooks 'TaskComplete'
+  collect_hooks hooks "$OUT/hooks/assigned-first-turn" TaskResume TaskComplete
+  store_rows hooks "$OUT/sessions/assigned-first-turn"
+  pty_submit 'spawn a helper'
+  snap subagent "$REF_WIDTH" 'Parent saw the subagent' 30
+  collect_hooks hooks "$OUT/hooks/assigned-subagent" TaskResume PreToolUse PostToolUse TaskComplete
+  store_rows hooks "$OUT/sessions/assigned-subagent"
+  pty_command '/clear'
+  snap clear "$REF_WIDTH" 'What can I do for you' 10
+  collect_hooks hooks "$OUT/hooks/assigned-clear-switch"
+  expect "hooks: reply after clear" pty_submit 'after clear' 'Reply after clear'
+  expect "hooks: TaskComplete after clear" wait_hook hooks 'TaskComplete'
+  collect_hooks hooks "$OUT/hooks/assigned-after-clear" TaskResume TaskComplete
+  pty_command '/fork'
+  if need "hooks: fork confirm" pty_wait 'Y/Enter to confirm' 10; then
+    pty_keys Enter
+    snap forked "$REF_WIDTH" 'Forked into new session' 10
+  fi
+  collect_hooks hooks "$OUT/hooks/assigned-fork-switch"
+  expect "hooks: reply after fork" pty_submit 'after fork' 'Reply after fork'
+  expect "hooks: TaskComplete after fork" wait_hook hooks 'TaskComplete'
+  collect_hooks hooks "$OUT/hooks/assigned-after-fork" TaskResume TaskComplete
+  pty_quit
+  snap exit-summary-assigned "$REF_WIDTH" 'Session Summary' 10
+  pty_stop
+  collect_hooks hooks "$OUT/hooks/assigned-quit"
+  store_rows hooks "$OUT/sessions/assigned-after-fork"
+  # Relaunch on the assigned id: which conversation it restores.
+  pty_start hooks "$REF_WIDTH" --id "$ID_ROOT"
+  expect "hooks: composer after relaunch" pty_idle
+  snap resume "$REF_WIDTH" 'First turn reply' 10
+  expect "hooks: reply after resume" pty_submit 'after resume' 'Reply after resume'
+  expect "hooks: TaskComplete after resume" wait_hook hooks 'TaskComplete'
+  collect_hooks hooks "$OUT/hooks/assigned-resume" TaskResume TaskComplete
+  pty_quit
+  pty_stop
+  store_rows hooks "$OUT/sessions/assigned-resume"
+  stub_requests hooks "$OUT/stub/hooks-requests.jsonl"
+  assert_no_hub hooks
+
+  # Without --id: the session id Cline generates and the TaskStart path.
+  stub_start hooks-plain '[{"text": "Plain reply."}, {"text": "Second plain reply."}]'
+  prepare_scn hooks-plain --hooks
+  pty_start hooks-plain "$REF_WIDTH"
+  expect "hooks-plain: composer" pty_idle
+  expect "hooks-plain: first reply" pty_submit 'plain turn' 'Plain reply'
+  expect "hooks-plain: second reply" pty_submit 'second plain turn' 'Second plain reply'
+  expect "hooks-plain: TaskComplete" wait_hook hooks-plain 'TaskComplete'
+  pty_quit
+  pty_stop
+  collect_hooks hooks-plain "$OUT/hooks/generated-id" TaskStart TaskComplete
+  store_rows hooks-plain "$OUT/sessions/generated-id"
+  {
+    printf 'session ids match ^[0-9]{13}_[0-9a-z]{5}$: '
+    if sqlite3 -readonly "$(scn_dir hooks-plain)/fakehome/.cline/data/db/sessions.db" 'select session_id from sessions' |
+      grep -Evq '^[0-9]{13}_[0-9a-z]{5}$'; then echo no; else echo yes; fi
+  } | emit "$OUT/sessions/generated-id/id-shape.txt"
+  stub_stop
+  assert_no_hub hooks-plain
+}
+
+# TaskError from a stub that answers HTTP 400, and the cancel paths: Escape
+# while the model streams, while a tool runs and while a subagent streams,
+# and Ctrl+C while the model streams.
+step_errors() {
+  stub_start errors '[{"error": 400, "message": "capture stub error", "times": 20}]'
+  prepare_scn errors --hooks
+  pty_start errors "$REF_WIDTH" --id "$ID_ROOT"
+  expect "errors: composer" pty_idle
+  pty_submit 'this turn fails'
+  expect "errors: TaskError" wait_hook errors 'TaskError' 60
+  snap error "$REF_WIDTH" 'Error: capture stub error' 20
+  pty_quit
+  pty_stop
+  collect_hooks errors "$OUT/hooks/error-400" TaskError
+  stub_requests errors "$OUT/stub/error-400-requests.jsonl"
+  store_rows errors "$OUT/sessions/error-400"
+
+  local how after
+  for how in escape-stream escape-tool escape-subagent ctrl-c-stream; do
+    case "$how" in
+      escape-tool)
+        stub_start "cancel-$how" '[{"tool": "run_commands", "args": {"commands": ["sleep 30"]}}, {"text": "Late reply."}]'
+        ;;
+      escape-subagent)
+        stub_start "cancel-$how" '[
+          {"tool": "spawn_agent", "args": {"systemPrompt": "You are a helper.", "task": "Answer slowly."}},
+          {"text": "Slow subagent reply.", "delay": 30, "unless_tool": "team_status"},
+          {"text": "Late reply."}]'
+        ;;
+      *)
+        stub_start "cancel-$how" '[{"text": "Slow reply.", "delay": 30}, {"text": "Late reply."}]'
+        ;;
+    esac
+    prepare_scn "cancel-$how" --hooks
+    pty_start "cancel-$how" "$REF_WIDTH" --id "$ID_ROOT"
+    expect "cancel-$how: composer" pty_idle
+    pty_submit 'a turn to cancel'
+    case "$how" in
+      escape-tool) expect "cancel-$how: tool running" pty_wait 'sleep 30' 20 ;;
+      escape-subagent) expect "cancel-$how: subagent request" stub_wait_reply "cancel-$how" 1 20 ;;
+      *) expect "cancel-$how: thinking" pty_wait 'Thinking' 20 ;;
+    esac
+    sleep 2
+    if [[ "$how" == ctrl-c-stream ]]; then
+      pty_keys C-c
+      after='Session Summary'
+    else
+      pty_keys Escape
+      after='Ask anything'
+    fi
+    sleep 4
+    snap "cancel-$how" "$REF_WIDTH" "$after" 10
+    pty_dead || pty_quit
+    pty_stop
+    collect_hooks "cancel-$how" "$OUT/hooks/cancel-$how" SessionShutdown
+    store_rows "cancel-$how" "$OUT/sessions/cancel-$how"
+  done
+
+  # Headless run (`--json`, no terminal) with a timeout shorter than the
+  # held reply.
+  local s rc=0
+  stub_start headless-timeout '[{"text": "Slow headless reply.", "delay": 30}]'
+  prepare_scn headless-timeout --hooks
+  s="$(scn_dir headless-timeout)"
+  "$s/run" --json -t 3 'a headless turn' </dev/null >"$s/headless.ndjson" 2>"$s/headless.err" || rc=$?
+  mkdir -p "$OUT/headless"
+  if need "headless: no NDJSON" test -s "$s/headless.ndjson"; then
+    jq -c "$LONG_STRING_FILTER" "$s/headless.ndjson" | emit "$OUT/headless/timeout.ndjson"
+  fi
+  { printf 'exit code: %s\n' "$rc"; cat "$s/headless.err"; } | emit "$OUT/headless/timeout-exit.txt"
+  collect_hooks headless-timeout "$OUT/hooks/headless-timeout" TaskStart
+  stub_stop
+  assert_no_hub errors
+}
+
+# An agent team: /team, the lead spawns a teammate and routes a task to it.
+step_team() {
+  stub_start team '[
+    {"tool": "team_spawn_teammate", "args": {"agentId": "helper", "rolePrompt": "You are the helper teammate."}, "when_tool": "team_spawn_teammate"},
+    {"tool": "team_run_task", "args": {"agentId": "helper", "task": "Say hello.", "runMode": "sync"}, "when_tool": "team_run_task"},
+    {"text": "Helper says hello.", "unless_tool": "team_spawn_teammate"},
+    {"text": "The team is done.", "when_tool": "team_spawn_teammate"}]'
+  prepare_scn team --hooks
+  pty_start team "$REF_WIDTH" --id "$ID_ROOT"
+  expect "team: composer" pty_idle
+  pty_submit '/team say hello with a helper'
+  snap team "$REF_WIDTH" 'The team is done' 60
+  pty_quit
+  pty_stop
+  collect_hooks team "$OUT/hooks/team" TaskResume PreToolUse PostToolUse TaskComplete
+  store_rows team "$OUT/sessions/team"
+  expect "team: no teammate row" jq -e 'any(.[]; .session_id | test("__teamtask__"))' \
+    "$OUT/sessions/team/sessions-table.json" >/dev/null
+  stub_requests team "$OUT/stub/team-requests.jsonl"
+  stub_stop
+  assert_no_hub team
+}
+
+# /history: two sessions in one data root, then a switch from the second to
+# the first and a turn after it.
+step_history() {
+  stub_start history '[
+    {"text": "Reply in session one."},
+    {"text": "Reply in session two."},
+    {"text": "Reply after the switch."}]'
+  prepare_scn history --hooks
+  pty_start history "$REF_WIDTH" --id "$ID_ROOT"
+  expect "history: composer (one)" pty_idle
+  expect "history: reply one" pty_submit 'session one' 'Reply in session one'
+  pty_quit
+  pty_stop
+  pty_start history "$REF_WIDTH" --id "$ID_OTHER"
+  expect "history: composer (two)" pty_idle
+  expect "history: reply two" pty_submit 'session two' 'Reply in session two'
+  expect "history: TaskComplete two" wait_hook history 'TaskComplete'
+  collect_hooks history "$OUT/hooks/history-before" TaskResume TaskComplete
+  pty_command '/history'
+  if snap_wait history-picker "$REF_WIDTH" 'Session History' 10; then
+    # The picker lists sessions newest first; Down moves to the older one.
+    pty_keys Down
+    sleep 0.5
+    pty_keys Enter
+    snap history-switched "$REF_WIDTH" 'Reply in session one' 10
+  fi
+  expect "history: reply after the switch" pty_submit 'after the switch' 'Reply after the switch'
+  expect "history: TaskComplete after the switch" wait_hook history 'TaskComplete'
+  collect_hooks history "$OUT/hooks/history-after-switch" TaskResume TaskComplete
+  pty_quit
+  pty_stop
+  store_rows history "$OUT/sessions/history"
+  stub_stop
+  assert_no_hub history
+}
+
+# /undo: a stub turn writes a file through run_commands, then /undo restores
+# the checkpoint before it, chat and workspace.
+step_undo() {
+  local s
+  stub_start undo '[
+    {"text": "Nothing changed yet."},
+    {"tool": "run_commands", "args": {"commands": ["echo changed > README.md && echo new > added.txt"]}},
+    {"text": "Files changed."},
+    {"text": "Reply after undo."}]'
+  prepare_scn undo --hooks
+  s="$(scn_dir undo)"
+  pty_start undo "$REF_WIDTH" --id "$ID_UNDO"
+  expect "undo: composer" pty_idle
+  expect "undo: first reply" pty_submit 'first turn' 'Nothing changed yet'
+  expect "undo: reply after the change" pty_submit 'change the files' 'Files changed'
+  expect "undo: TaskComplete" wait_hook undo 'TaskComplete'
+  sleep 1
+  {
+    printf 'before /undo:\n'
+    printf 'README.md: %s\n' "$(cat "$s/ws/README.md")"
+    printf 'added.txt: %s\n' "$(cat "$s/ws/added.txt" 2>/dev/null || echo '<absent>')"
+  } >"$s/undo-state.txt"
+  collect_hooks undo "$OUT/hooks/undo-before" TaskResume PreToolUse PostToolUse TaskComplete
+  pty_command '/undo'
+  if snap_wait undo-picker "$REF_WIDTH" 'Restore to Checkpoint' 10; then
+    pty_keys Enter
+    # The second entry restores the workspace too (the first keeps files).
+    if snap_wait undo-confirm "$REF_WIDTH" 'Restore chat and workspace' 10; then
+      pty_keys Down
+      sleep 0.5
+      pty_keys Enter
+      snap undo-done "$REF_WIDTH" '❯ change the files' 10
+    fi
+  fi
+  {
+    cat "$s/undo-state.txt"
+    printf 'after /undo:\n'
+    printf 'README.md: %s\n' "$(cat "$s/ws/README.md")"
+    printf 'added.txt: %s\n' "$(cat "$s/ws/added.txt" 2>/dev/null || echo '<absent>')"
+    printf 'git status:\n'
+    wsgit "$s/ws" status --short
+  } | emit "$OUT/sessions/undo/workspace.txt"
+  # The restored prompt stays in the composer; the next turn sends it with
+  # this text appended.
+  expect "undo: reply after undo" pty_submit 'after undo' 'Reply after undo'
+  expect "undo: TaskComplete after undo" wait_hook undo 'TaskComplete'
+  collect_hooks undo "$OUT/hooks/undo-after" TaskResume TaskComplete
+  pty_quit
+  pty_stop
+  store_rows undo "$OUT/sessions/undo-store"
+  stub_stop
+  assert_no_hub undo
+}
+
+# Hub placement, only inside the namespace and on a private port:
+#   prewarm   a TUI without sandbox mode and no hub running
+#   sandbox   the same with sandbox mode: no daemon
+#   attach    a hub started first: an assigned id, then a generated one, and
+#             where the hooks of a hub-hosted session run
+#   outdated  an older release's hub serving a session, then this release's TUI
+step_hub() {
+  local s
+  mkdir -p "$OUT/hub"
+
+  stub_start hub-prewarm '[{"text": "Hub turn reply."}]'
+  prepare_scn hub-prewarm --no-sandbox --hooks
+  s="$(scn_dir hub-prewarm)"
+  pty_start hub-prewarm "$REF_WIDTH" --id "$ID_HUB"
+  expect "hub: composer" pty_idle
+  expect "hub: reply" pty_submit 'hub turn' 'Hub turn reply'
+  sleep 3
+  {
+    printf '# no hub running, no sandbox mode; while the TUI runs\n'
+    printf 'pane:\n'
+    proc_tree "$(pty_pid)"
+    printf 'hub daemons:\n'
+    hub_daemons_tree
+  } | emit "$OUT/hub/prewarm-running.txt"
+  pty_quit
+  pty_stop
+  sleep 2
+  {
+    printf '# after the TUI exited\n'
+    printf 'hub daemons:\n'
+    hub_daemons_tree
+    printf 'discovery record keys: '
+    jq -c 'keys' "$s/hub/discovery.json" 2>/dev/null || echo '<absent>'
+  } | emit "$OUT/hub/prewarm-after-exit.txt"
+  routing_log hub-prewarm "$OUT/hub/prewarm-routing.tsv"
+  collect_hooks hub-prewarm "$OUT/hooks/hub-prewarm" TaskComplete
+  kill_hubs
+
+  stub_start hub-sandbox '[{"text": "Hub turn reply."}]'
+  prepare_scn hub-sandbox --hooks
+  pty_start hub-sandbox "$REF_WIDTH" --id "$ID_HUB"
+  expect "hub: composer" pty_idle
+  expect "hub: reply" pty_submit 'hub turn' 'Hub turn reply'
+  sleep 3
+  printf '# sandbox mode, while the TUI runs\nhub daemons: %s\n' "$(hub_daemons | wc -l)" |
+    emit "$OUT/hub/sandbox-running.txt"
+  pty_quit
+  pty_stop
+  sleep 2
+  printf '# sandbox mode, after the TUI exited\nhub daemons: %s\n' "$(hub_daemons | wc -l)" |
+    emit "$OUT/hub/sandbox-after-exit.txt"
+  routing_log hub-sandbox "$OUT/hub/sandbox-routing.tsv"
+  collect_hooks hub-sandbox "$OUT/hooks/hub-sandbox" TaskComplete
+  kill_hubs
+
+  # A hub running on the private port: the TUI attaches to it.
+  stub_start hub-attach '[{"text": "Hub turn reply."}]'
+  prepare_scn hub-attach --no-sandbox --hooks
+  s="$(scn_dir hub-attach)"
+  "$s/run" hub start --port "$HUB_PORT" --json >"$s/hub-start.json" 2>&1 || miss "hub-attach: hub start"
+  jq -c 'del(.. | .authToken?, .token?)' "$s/hub-start.json" | emit "$OUT/hub/attach-hub-start.json"
+  sleep 2
+  # The TUI gets a variable the hub was started without, so a hook record
+  # shows whose environment the hook sees.
+  sed -i -e 's|^  cline "\$@"$|  CAPTURE_TUI_ONLY=tui-marker cline "$@"|' "$s/run"
+  grep -q CAPTURE_TUI_ONLY "$s/run" || die "hub-attach: the TUI marker was not added"
+  pty_start hub-attach "$REF_WIDTH" --id "$ID_HUB"
+  sleep 8
+  snap hub-attach-assigned-id "$REF_WIDTH" '❯' 10
+  pty_stop
+  pty_start hub-attach "$REF_WIDTH"
+  expect "hub: composer" pty_idle
+  expect "hub: reply" pty_submit 'hub turn' 'Hub turn reply'
+  sleep 3
+  snap hub-attach-generated-id "$REF_WIDTH" 'Hub turn reply' 10
+  {
+    printf '# a hub started first, while the TUI runs\n'
+    printf 'pane:\n'
+    proc_tree "$(pty_pid)"
+    printf 'hub daemons:\n'
+    hub_daemons_tree
+  } | emit "$OUT/hub/attach-running.txt"
+  pty_quit
+  pty_stop
+  routing_log hub-attach "$OUT/hub/attach-routing.tsv"
+  collect_hooks hub-attach "$OUT/hooks/hub-attach" TaskComplete
+  "$s/run" hub stop >"$s/hub-stop.txt" 2>&1 || miss "hub-attach: hub stop"
+  emit "$OUT/hub/attach-hub-stop.txt" <"$s/hub-stop.txt"
+  kill_hubs
+
+  # An older release's hub serving a session, then this release's TUI.
+  if [[ -z "$OLD_RELEASE" || ! -x "$(platform_dir "$OLD_RELEASE")/bin/cline" ]]; then
+    log "hub-outdated skipped: no older release installed"
+    stub_stop
+    assert_no_hub hub
+    return 0
+  fi
+  local tui="$TMUX_SOCKET"
+  stub_start hub-outdated '[{"text": "Old hub turn reply."}, {"text": "New TUI reply."}]'
+  prepare_scn hub-outdated --no-sandbox --release "$OLD_RELEASE"
+  s="$(scn_dir hub-outdated)"
+  "$s/run" hub start --port "$HUB_PORT" --json >"$s/hub-start.json" 2>&1 || miss "hub-outdated: older hub start"
+  sleep 2
+  pty_start hub-outdated "$REF_WIDTH"
+  expect "hub-outdated: composer" pty_idle
+  expect "hub-outdated: reply" pty_submit 'old hub turn' 'Old hub turn reply'
+  sleep 2
+  {
+    printf '# %s hub started, a %s TUI attached with a session\n' "$OLD_RELEASE" "$OLD_RELEASE"
+    printf 'hub daemons:\n'
+    hub_daemons_tree
+  } | emit "$OUT/hub/outdated-before.txt"
+  # A second terminal on the same data root with this release's CLI.
+  sed -e "s|$(prefix_dir "$OLD_RELEASE")/bin|$(prefix_dir "$RELEASE")/bin|" "$s/run" >"$s/run-new"
+  chmod +x "$s/run-new"
+  tm new-session -d -s new -x "$REF_WIDTH" -y "$HEIGHT" -c "$s/ws" "$(printf '%q' "$s/run-new")"
+  sleep 10
+  PTY_TARGET=new
+  snap hub-outdated "$REF_WIDTH" '❯|Cline Hub' 10
+  PTY_TARGET=0
+  {
+    printf '# then a %s TUI on the same data root\n' "$RELEASE"
+    printf 'hub daemons:\n'
+    hub_daemons_tree
+  } | emit "$OUT/hub/outdated-after.txt"
+  TMUX_SOCKET="$tui"
+  pty_stop
+  routing_log hub-outdated "$OUT/hub/outdated-routing.tsv"
+  kill_hubs
+  stub_stop
+  assert_no_hub hub
+}
+
+# routing_log <scn> <dest>: the runtime routing lines of the scenario's CLI
+# log (which runtime host each run chose, and why).
+routing_log() {
+  local log
+  log="$(scn_dir "$1")/fakehome/.cline/data/logs/cline.log"
+  [[ -f "$log" ]] || return 0
+  jq -r 'select(.msg | test("hub|runtime|routing|Unknown session"; "i")) |
+    [.msg, (.backendMode // ""), (.forceLocalBackend // "" | tostring), (.reason // ""),
+     (.err.message // "")] | @tsv' "$log" 2>/dev/null | uniq | emit "$2"
+}
+
+# The Arch package (`cline-cli`): recorded only when it ships this release.
+step_arch() {
+  local pkg=/usr/lib/node_modules/cline version
+  if [[ ! -f "$pkg/package.json" ]]; then
+    log "arch: no $pkg on this host"
+    return 0
+  fi
+  version="$(jq -r .version "$pkg/package.json")"
+  if [[ "$version" != "$RELEASE" ]]; then
+    log "arch: the host package is $version, not $RELEASE; nothing recorded"
+    return 0
+  fi
+  {
+    printf 'package: %s %s\n' "$pkg" "$version"
+    printf 'bin/.cline cache: %s\n' "$([[ -e "$pkg/bin/.cline" ]] && echo present || echo absent)"
+    (cd "$pkg" && find bin node_modules/@cline -maxdepth 3 | sort)
+  } | emit "$OUT/install/arch-layout.txt"
+}
+
+# --- main ----------------------------------------------------------------------------------
+
+dry_run() {
+  local step
+  printf 'capture plan (dry run)\n'
+  printf '  root: %s\n' "$ROOT"
+  printf '  out:  %s\n' "$OUT"
+  printf '  release: %s (older hub: %s)\n' "$RELEASE" "${OLD_RELEASE:-none}"
+  printf '  platform package: %s\n' "$(platform_package)"
+  printf '  widths: %s\n' "${WIDTHS[*]}"
+  printf '  steps: %s\n' "$*"
+  for step in "$@"; do
+    printf '%s\n' "${STEPS_ALL[@]}" | grep -qx -- "$step" || die "unknown step: $step"
+  done
+  require_tools
+  # The redaction keeps the width of the replaced path and the shape of ids.
+  local sample cut wrapped
+  sample="$(printf '%s/x' "$ROOT" | redact)"
+  [[ "${#sample}" -eq $((${#ROOT} + 2)) ]] || die "redaction changed the width"
+  [[ "$sample" != *"$ROOT"* ]] || die "redaction left the root in place"
+  cut=$((${#ROOT} / 2))
+  wrapped="$(printf '%s\n  %s' "${ROOT:0:cut}" "${ROOT:cut}" | redact | tr -d ' \n')"
+  [[ "$wrapped" != *"${ROOT:0:cut}"* && "$wrapped" != *"${ROOT:cut}"* ]] ||
+    die "redaction left a wrapped root in place"
+  sample="$(printf '1793890642459_25ovn conv_1793891874081_5lrrc8n 6f1c2a3b-4d5e-4f60-8a71-92b3c4d5e6f7 %s' "$ID_ROOT" | redact)"
+  [[ "$sample" =~ ^[0-9]{13}_[0-9a-z]{5}\ conv_[0-9]{13}_[0-9a-z]{7}\ [0-9a-f-]{36}\ c0ffee00- ]] ||
+    die "id redaction changed the shape: $sample"
+  [[ "$sample" != *1793890642459* && "$sample" != *5lrrc8n* && "$sample" != *6f1c2a3b* ]] ||
+    die "id redaction left an id in place"
+  # A teammate's task id and its messages file share one placeholder.
+  sample="$(printf 'r__teamtask__helper__Ptaxg5 s/helper__Ptaxg5.messages.json' | redact)"
+  [[ "$sample" =~ ^r__teamtask__helper__([0-9]{6})\ s/helper__([0-9]{6})\.messages\.json$ &&
+    "${BASH_REMATCH[1]}" == "${BASH_REMATCH[2]}" ]] || die "teammate suffix redaction: $sample"
+  rm -f "$ROOT/idmap.tsv"
+  bash -n "$SCRIPT_DIR/capture"
+  bash -n "$SCRIPT_DIR/hook-log"
+  python3 -I -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$SCRIPT_DIR/model-stub"
+  stub_selftest
+  printf 'dry run ok\n'
+}
+
+# stub_selftest: the model stub serves a scripted reply on loopback. It runs
+# on the host's loopback in the dry run, on a port chosen by the kernel.
+stub_selftest() {
+  local dir="$ROOT/stub-selftest" port pid
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf '[{"text": "selftest", "when_tool": "x"}, {"error": 400}]\n' >"$dir/script.json"
+  port="$(python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+  python3 -I "$SCRIPT_DIR/model-stub" --port "$port" --script "$dir/script.json" --log "$dir/log.jsonl" 2>/dev/null &
+  pid=$!
+  for _ in $(seq 1 50); do
+    curl -fsS "http://127.0.0.1:$port/v1/models" >/dev/null 2>&1 && break
+    sleep 0.1
+  done
+  local code text
+  code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -d '{"tools": []}' "http://127.0.0.1:$port/v1/chat/completions")"
+  text="$(curl -s -X POST -d '{"tools": [{"function": {"name": "x"}}]}' "http://127.0.0.1:$port/v1/chat/completions")"
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  [[ "$code" == 400 ]] || die "model stub selftest: expected HTTP 400, got $code"
+  [[ "$text" == *'"content": "selftest"'* ]] || die "model stub selftest: scripted text missing"
+  rm -rf "$dir"
+}
+
+# assert_isolated: only a loopback interface exists, the root is bound, and
+# the owner's hub port (or any other host listener) is unreachable.
+assert_isolated() {
+  local links
+  links="$(ip -o link | awk -F': ' '{print $2}' | tr '\n' ' ')"
+  [[ "$links" == "lo " ]] || die "network namespace is not loopback-only: $links"
+  [[ -n "${CAPTURE_HOST_ROOT:-}" && "$ROOT" == /run/capture-root ]] ||
+    die "capture root is not bound inside the namespace"
+  [[ "$(hostname)" == capture ]] || die "host name is not isolated"
+  if (exec 3<>/dev/tcp/127.0.0.1/25463) 2>/dev/null; then
+    die "a listener on 127.0.0.1:25463 is reachable inside the namespace"
+  fi
+  [[ "$(ps -e -o pid= | wc -l)" -lt 20 ]] || die "the process namespace is not private"
+  if [[ -d "$CAPTURE_HOST_HOME/.cline" ]]; then
+    [[ "$(stat -f -c %T "$CAPTURE_HOST_HOME/.cline")" == tmpfs && -z "$(ls -A "$CAPTURE_HOST_HOME/.cline")" ]] ||
+      die "the operator's Cline home is not covered inside the namespace"
+  fi
+}
+
+# scan_evidence <dir>: fails when a host-specific string or a credential
+# appears in the staged evidence, case-insensitively. Each file is also
+# searched with whitespace and box-drawing characters removed (a value wrapped
+# across rows), and host values are searched in truncated forms.
+scan_evidence() {
+  local dir="$1" needle f squashed lower bad=0 part n
+  local needles=() derived=()
+  local raw=("$CAPTURE_HOST_ROOT" "$CAPTURE_HOST_HOME" "$CAPTURE_HOST_USER" "$CAPTURE_HOST_HOSTNAME"
+    "$CAPTURE_HOST_REPO" "$STUB_KEY")
+  for needle in "${raw[@]}"; do
+    [[ -n "$needle" ]] && needles+=("$needle")
+  done
+  for needle in "$CAPTURE_HOST_ROOT" "$CAPTURE_HOST_HOME" "$CAPTURE_HOST_REPO"; do
+    for part in ${needle//\// }; do
+      [[ ${#part} -ge 4 && "$part" =~ [0-9_] ]] && needles+=("$part")
+    done
+  done
+  for needle in "${needles[@]}"; do
+    ((${#needle} >= 5)) || continue
+    for ((n = 3; n < ${#needle}; n++)); do
+      derived+=("${needle:0:n}…" "…${needle:${#needle}-n}")
+    done
+  done
+  needles+=("${derived[@]}")
+  while IFS= read -r -d '' f; do
+    lower="$(tr '[:upper:]' '[:lower:]' <"$f")"
+    squashed="$(printf '%s' "$lower" | sed -e 's/[│┃║─ \t\r]//g' | tr -d '\n')"
+    for needle in "${needles[@]}"; do
+      local ln="${needle,,}"
+      if [[ "$lower" == *"$ln"* || "$squashed" == *"${ln//[[:space:]]/}"* ]]; then
+        log "host value in ${f#"$dir"/}: $needle"
+        bad=1
+      fi
+    done
+    if [[ "$squashed" =~ /(home|users|root)/[a-z0-9._-]+ ]]; then
+      log "home path in ${f#"$dir"/}"
+      bad=1
+    fi
+    if grep -Eqi '"(authtoken|apikey|api_key|accesstoken|refreshtoken)"[[:space:]]*:[[:space:]]*"[^"<]' "$f" ||
+      grep -Eq 'POHUNEK_|Bearer [A-Za-z0-9._-]{20,}' "$f"; then
+      log "credential-shaped or POHUNEK_ value in ${f#"$dir"/}"
+      bad=1
+    fi
+  done < <(find "$dir" -type f -print0)
+  ((bad == 0)) || die "host-specific data in the evidence; nothing was published"
+}
+
+# Paths under compat/ each step owns; a successful step replaces them.
+step_owned() {
+  case "$1" in
+    version) echo "RELEASE install/version.txt install/layout.txt install/postinstall.txt install/postinstall-cache.txt install/process-nocache.txt install/process-cache.txt install/telemetry-selfcheck.txt install/settings-after-start.json install/settings-keys.txt install/first-start-tree.txt help" ;;
+    onboarding) echo "screens/onboarding screens/onboarding-byo-selected screens/provider-picker screens/provider-picker-search screens/api-key-form screens/model-step screens/signin-cline screens/signin-cline-after screens/signin-clinepass screens/signin-clinepass-after screens/signin-chatgpt screens/signin-chatgpt-after screens/signin-opened-urls.txt" ;;
+    promo) echo "screens/promo screens/promo-launch-1 screens/promo-launch-2 screens/promo-launch-3 screens/promo-notices-state.json screens/promo-suppressed screens/promo-suppressed-launch-1 screens/promo-suppressed-launch-2 screens/promo-suppressed-launch-3 screens/promo-suppressed-state.txt" ;;
+    turn) echo "install/process-sandbox-tui.txt screens/idle-home screens/idle-chat screens/working-thinking screens/working-tool-row screens/turn-done screens/exit-summary terminal stub/turn-requests.jsonl" ;;
+    dialogs) echo "screens/approval screens/approval-approved screens/question screens/question-answered screens/fork-confirm screens/approval-n screens/approval-text" ;;
+    hooks) echo "hooks/assigned-first-turn hooks/assigned-subagent hooks/assigned-clear-switch hooks/assigned-after-clear hooks/assigned-fork-switch hooks/assigned-after-fork hooks/assigned-quit hooks/assigned-resume hooks/generated-id sessions/assigned-first-turn sessions/assigned-subagent sessions/assigned-after-fork sessions/assigned-resume sessions/generated-id screens/subagent screens/clear screens/forked screens/exit-summary-assigned screens/resume stub/hooks-requests.jsonl" ;;
+    errors) echo "hooks/error-400 hooks/cancel-escape-stream hooks/cancel-escape-tool hooks/cancel-escape-subagent hooks/cancel-ctrl-c-stream hooks/headless-timeout headless sessions/error-400 sessions/cancel-escape-stream sessions/cancel-escape-tool sessions/cancel-escape-subagent sessions/cancel-ctrl-c-stream screens/error screens/cancel-escape-stream screens/cancel-escape-tool screens/cancel-escape-subagent screens/cancel-ctrl-c-stream stub/error-400-requests.jsonl" ;;
+    team) echo "hooks/team sessions/team screens/team stub/team-requests.jsonl" ;;
+    history) echo "hooks/history-before hooks/history-after-switch sessions/history screens/history-picker screens/history-switched" ;;
+    undo) echo "hooks/undo-before hooks/undo-after sessions/undo sessions/undo-store screens/undo-picker screens/undo-confirm screens/undo-done" ;;
+    hub) echo "hub hooks/hub-prewarm hooks/hub-sandbox hooks/hub-attach screens/hub-attach-assigned-id screens/hub-attach-generated-id screens/hub-outdated" ;;
+    arch) echo "install/arch-layout.txt" ;;
+  esac
+}
+
+# swap_step <step> <stage>: replaces the step's paths in compat/ by the staged
+# ones; the screen index keeps the rows of other steps.
+swap_step() {
+  local step="$1" stage="$2" rel index="$OUT/screens/INDEX.tsv" staged="$2/screens/INDEX.tsv"
+  for rel in $(step_owned "$step"); do
+    rm -rf "${OUT:?}/$rel"
+  done
+  if [[ -f "$staged" ]]; then
+    # Rows of the step's own screen scenarios are replaced, also those the
+    # new run did not reach.
+    {
+      step_owned "$step" | tr ' ' '\n' | sed -n 's|^screens/||p'
+      cut -f1 "$staged"
+    } | sort -u >"$stage/index.own"
+    {
+      [[ -f "$index" ]] && awk -F'\t' 'NR == FNR { own[$1] = 1; next } !($1 in own)' "$stage/index.own" "$index"
+      cat "$staged"
+    } | sort -t$'\t' -k1,1 -k2,2n >"$stage/index.new"
+    rm -f "$staged" "$stage/index.own"
+  fi
+  cp -a "$stage/." "$OUT/"
+  if [[ -f "$stage/index.new" ]]; then
+    mv "$OUT/index.new" "$index"
+  fi
+}
+
+run_step() {
+  case "$1" in
+    install) ;;
+    version) step_version ;;
+    onboarding) step_onboarding ;;
+    promo) step_promo ;;
+    turn) step_turn ;;
+    dialogs) step_dialogs ;;
+    hooks) step_hooks ;;
+    errors) step_errors ;;
+    team) step_team ;;
+    history) step_history ;;
+    undo) step_undo ;;
+    hub) step_hub ;;
+    arch) step_arch ;;
+    *) die "unknown step: $1" ;;
+  esac
+}
+
+# host_hubs: hub daemons on the host whose command line names this capture
+# root, by its host path or by the path it is bound to inside the namespace.
+# Daemons of other installations (the operator's own hub) never match and are
+# never touched.
+host_hubs() {
+  local pid
+  for pid in $(pgrep -f -- '--cline-hub-daemon' || true); do
+    if is_hub_daemon "$pid" && tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -qF -e "$ROOT" -e /run/capture-root/; then
+      printf '%s\n' "$pid"
+    fi
+  done
+}
+
+main() {
+  local steps=() arg
+  while (($# > 0)); do
+    arg="$1"
+    shift
+    case "$arg" in
+      --dry-run) DRY_RUN=1 ;;
+      --root | --out | --release | --old-release)
+        (($# > 0)) || die "$arg needs a value"
+        case "$arg" in
+          --root) ROOT="$1" ;;
+          --out) OUT="$1" ;;
+          --release) RELEASE="$1" ;;
+          --old-release) OLD_RELEASE="$1" ;;
+        esac
+        shift
+        ;;
+      -h | --help)
+        usage
+        exit 0
+        ;;
+      all) steps+=("${STEPS_ALL[@]}") ;;
+      -*) die "unknown option: $arg" ;;
+      *) steps+=("$arg") ;;
+    esac
+  done
+  ((${#steps[@]} > 0)) || {
+    usage >&2
+    exit 2
+  }
+  # No Pohunek or agent-session variable reaches the CLI or the hooks.
+  local name
+  for name in $(compgen -e | grep -E '^(POHUNEK_|CLAUDE)' || true); do
+    unset "$name"
+  done
+  resolve_releases
+  ROOT="$(realpath -m -- "$ROOT")"
+  OUT="$(realpath -m -- "$OUT")"
+  # The root holds raw, unredacted output; it must not sit in the evidence.
+  # The check runs before anything is created.
+  case "$ROOT/" in
+    "$OUT"/* | "$(realpath -m -- "$REPO_DIR/compat")"/*)
+      die "--root must not be inside the evidence directory"
+      ;;
+  esac
+  mkdir -p -- "$ROOT" "$OUT"
+  if ((DRY_RUN == 1)); then
+    dry_run "${steps[@]}"
+    exit 0
+  fi
+  require_tools
+  # Every step except install runs in user, network, mount, UTS and PID
+  # namespaces: only a loopback interface (the operator's hub and every
+  # remote endpoint are unreachable), the root bound to a fixed path, a
+  # synthetic passwd that names the caller `capture`, and a private process
+  # tree whose processes all end with it.
+  if [[ -z "${CAPTURE_IN_NETNS:-}" ]]; then
+    local rest=() before after rc=0
+    for arg in "${steps[@]}"; do
+      if [[ "$arg" == install ]]; then
+        step_install
+      else
+        rest+=("$arg")
+      fi
+    done
+    ((${#rest[@]} > 0)) || exit 0
+    before="$(host_hubs)"
+    [[ -z "$before" ]] || die "hub daemons from an earlier capture under this root are running: $before"
+    # Hub daemons of other installations: each must still run afterwards.
+    local others pid
+    others="$(hub_daemons)"
+    CAPTURE_IN_NETNS=1 CAPTURE_NS_STAGE=outer CAPTURE_HOST_ROOT="$ROOT" CAPTURE_HOST_HOME="$HOME" \
+      CAPTURE_HOST_USER="$(id -un)" CAPTURE_HOST_HOSTNAME="$(hostname)" CAPTURE_HOST_REPO="$REPO_DIR" \
+      CAPTURE_UID="$(id -u)" CAPTURE_GID="$(id -g)" \
+      unshare --user --map-root-user --net --mount --uts --pid --fork --kill-child \
+      bash "$SCRIPT_DIR/capture" --root "$ROOT" --out "$OUT" --release "$RELEASE" \
+      ${OLD_RELEASE:+--old-release "$OLD_RELEASE"} "${rest[@]}" || rc=$?
+    sleep 1
+    after="$(host_hubs)"
+    [[ -z "$after" ]] || die "hub daemons of this capture survived the namespace: $after"
+    for pid in $others; do
+      is_hub_daemon "$pid" || die "a hub daemon that ran before the capture is gone: $pid"
+    done
+    log "hub check: no hub daemon of this capture is running; $(wc -w <<<"$others") other hub daemon(s) unchanged"
+    exit "$rc"
+  fi
+  if [[ "${CAPTURE_NS_STAGE:-}" == outer ]]; then
+    ip link set lo up
+    hostname capture
+    mount -t proc proc /proc
+    mount -t tmpfs tmpfs /run
+    mkdir /run/capture-root
+    mount --bind "$ROOT" /run/capture-root
+    printf 'capture:x:%s:%s:capture:/run/capture-root/kit:/bin/bash\n' \
+      "$CAPTURE_UID" "$CAPTURE_GID" >/run/passwd
+    printf 'capture:x:%s:\n' "$CAPTURE_GID" >/run/group
+    mount --bind /run/passwd /etc/passwd
+    mount --bind /run/group /etc/group
+    # The operator's Cline home is covered by an empty tmpfs, so no step can
+    # read or write it even through a default path.
+    if [[ -d "$CAPTURE_HOST_HOME/.cline" ]]; then
+      mount -t tmpfs -o size=1m,mode=0700 tmpfs "$CAPTURE_HOST_HOME/.cline"
+    fi
+    CAPTURE_NS_STAGE=inner exec unshare --user --map-user="$CAPTURE_UID" --map-group="$CAPTURE_GID" \
+      bash "$SCRIPT_DIR/capture" --root /run/capture-root --out "$OUT" --release "$RELEASE" \
+      ${OLD_RELEASE:+--old-release "$OLD_RELEASE"} "${steps[@]}"
+  fi
+  mkdir -p "$ROOT/tmux"
+  export TMUX_TMPDIR="$ROOT/tmux"
+  assert_isolated
+  rm -f "$ROOT/idmap.tsv"
+  # The hook logger, the stub and an xdg-open that only records the URL live
+  # under the bound root, so no hook file or launcher holds a host path.
+  mkdir -p "$ROOT/kit/bin"
+  cp "$SCRIPT_DIR/hook-log" "$SCRIPT_DIR/model-stub" "$ROOT/kit/"
+  printf '#!/bin/bash\nprintf "%%s\\n" "$*" >>%q\n' "$ROOT/kit/opened.log" >"$ROOT/kit/bin/xdg-open"
+  chmod +x "$ROOT/kit/bin/xdg-open"
+  : >"$ROOT/kit/opened.log"
+  local stage failed=()
+  for arg in "${steps[@]}"; do
+    log "step: $arg"
+    stage="$ROOT/stage/$arg"
+    rm -rf "$stage"
+    mkdir -p "$stage/screens"
+    OUT_FINAL="$OUT"
+    OUT="$stage"
+    MISSES=()
+    run_step "$arg"
+    stub_stop
+    pty_stop
+    assert_no_hub "step $arg"
+    scan_evidence "$stage"
+    OUT="$OUT_FINAL"
+    if ((${#MISSES[@]} > 0)); then
+      # A step that missed an expectation leaves compat/ as it was; its
+      # staged files stay below the root for inspection.
+      printf '%s\n' "${MISSES[@]}" >"$stage/MISSED.txt"
+      log "step $arg: ${#MISSES[@]} expectation(s) missed; compat/ keeps the previous evidence (see ${stage}/MISSED.txt)"
+      failed+=("$arg")
+      continue
+    fi
+    swap_step "$arg" "$stage"
+  done
+  ((${#failed[@]} == 0)) || die "steps with missed expectations: ${failed[*]}"
+}
+
+main "$@"

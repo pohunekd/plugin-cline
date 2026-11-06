@@ -1,0 +1,5 @@
+# after the TUI exited
+hub daemons:
+parent: bash
+.cline [session leader]: /capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/.cline --cline-hub-daemon --cwd /capture-root____/s/hub-prewarm/ws --host 127.0.0.1 --port 27463 --pathname /hub
+discovery record keys: ["authToken","buildId","capabilities","coreVersion","host","hubId","maxClientProtocolVersion","minClientProtocolVersion","pid","port","protocolVersion","startedAt","updatedAt","url"]

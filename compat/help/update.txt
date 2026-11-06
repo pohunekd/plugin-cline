@@ -1,0 +1,8 @@
+Usage: cline update [options]
+
+Check for updates and install if available
+
+Options:
+  -v, --verbose   Show verbose output
+  --config <dir>  configuration directory
+  -h, --help      display help for command

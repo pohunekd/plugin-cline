@@ -1,0 +1,5 @@
+CLINE_DISABLE_CLINE_PASS_NOTICE=1, three launches on one data root:
+launch 1: no modal
+launch 2: no modal
+launch 3: no modal
+cli-notices.json: absent

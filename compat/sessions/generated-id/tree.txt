@@ -1,0 +1,15 @@
+.
+./db
+./db/sessions.db
+./db/sessions.db-shm
+./db/sessions.db-wal
+./db/teams.db
+./db/teams.db-shm
+./db/teams.db-wal
+./sessions
+./sessions/0000000000004_00000
+./sessions/0000000000004_00000/0000000000004_00000.json
+./sessions/0000000000004_00000/0000000000004_00000.messages.json
+./settings
+./settings/global-settings.json
+./settings/providers.json

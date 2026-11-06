@@ -1,0 +1,4 @@
+# 3.0.73 hub started, a 3.0.73 TUI attached with a session
+hub daemons:
+parent: bash
+cline [session leader]: /capture-root____/prefix/3.0.73/lib/node_modules/cline/node_modules/@cline/cli-linux-x64/bin/cline --cline-hub-daemon --cwd /capture-root____/s/hub-outdated/ws --host 127.0.0.1 --port 27463 --pathname /hub

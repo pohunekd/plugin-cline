@@ -1,0 +1,16 @@
+.
+./cli-node-extra-ca-certs.pem
+./data
+./data/db
+./data/db/sessions.db
+./data/db/sessions.db-shm
+./data/db/sessions.db-wal
+./data/db/teams.db
+./data/db/teams.db-shm
+./data/db/teams.db-wal
+./data/logs
+./data/logs/cline.log
+./data/sessions
+./data/settings
+./data/settings/global-settings.json
+./data/settings/providers.json

@@ -1,0 +1,8 @@
+Session Summary
+  ID        0000000000001_00000
+  Duration  20s
+  Model     openai-compatible:stub-model
+  CWD       /capture-root____/s/turn/ws
+  Messages  6
+  Cost      $0.00
+  Continue  cline --id 0000000000001_00000

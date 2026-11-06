@@ -1,0 +1,4 @@
+/.capture/
+/logs/
+.env*
+__pycache__/

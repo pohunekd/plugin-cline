@@ -1,0 +1,126 @@
+[
+  {
+    "version": 1,
+    "session_id": "c0ffee00-0000-4000-8000-000000000003",
+    "source": "cli",
+    "started_at": "2026-11-06T00:18:57.167Z",
+    "ended_at": "2026-11-06T00:19:04.966Z",
+    "exit_code": 0,
+    "status": "completed",
+    "interactive": true,
+    "provider": "openai-compatible",
+    "model": "stub-model",
+    "cwd": "/capture-root____/s/undo/ws",
+    "workspace_root": "/capture-root____/s/undo/ws",
+    "team_name": "team-00017",
+    "enable_tools": true,
+    "enable_spawn": true,
+    "enable_teams": true,
+    "prompt": "<user_input mode=\"act\">first turn</user_input>",
+    "metadata": {
+      "sessionHistoryOrigin": {
+        "mode": "user",
+        "version": "3.0.74"
+      },
+      "git": {
+        "branch": "main"
+      },
+      "checkpoint": {
+        "latest": {
+          "ref": "0000000000000000000000000000000000000001",
+          "createdAt": 1793924339313,
+          "runCount": 1,
+          "kind": "commit"
+        },
+        "history": [
+          {
+            "ref": "0000000000000000000000000000000000000001",
+            "createdAt": 1793924339313,
+            "runCount": 1,
+            "kind": "commit"
+          }
+        ]
+      },
+      "title": "first turn",
+      "totalCost": 0,
+      "aggregatedAgentsCost": 0,
+      "usage": {
+        "inputTokens": 30,
+        "outputTokens": 15,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "totalCost": 0
+      },
+      "aggregateUsage": {
+        "inputTokens": 30,
+        "outputTokens": 15,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "totalCost": 0
+      }
+    },
+    "messages_path": "/capture-root____/s/undo/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000003/c0ffee00-0000-4000-8000-000000000003.messages.json"
+  },
+  {
+    "version": 1,
+    "session_id": "0000000000006_00000",
+    "source": "cli",
+    "started_at": "2026-11-06T00:19:04.851Z",
+    "ended_at": "2026-11-06T00:19:07.664Z",
+    "exit_code": 0,
+    "status": "completed",
+    "interactive": true,
+    "provider": "openai-compatible",
+    "model": "stub-model",
+    "cwd": "/capture-root____/s/undo/ws",
+    "workspace_root": "/capture-root____/s/undo/ws",
+    "team_name": "team-00018",
+    "enable_tools": true,
+    "enable_spawn": true,
+    "enable_teams": true,
+    "prompt": "<user_input mode=\"act\">change the filesafter undo</user_input>",
+    "metadata": {
+      "sessionHistoryOrigin": {
+        "mode": "user",
+        "version": "3.0.74"
+      },
+      "checkpoint": {
+        "latest": {
+          "ref": "0000000000000000000000000000000000000001",
+          "createdAt": 1793924339313,
+          "runCount": 1,
+          "kind": "commit"
+        },
+        "history": [
+          {
+            "ref": "0000000000000000000000000000000000000001",
+            "createdAt": 1793924339313,
+            "runCount": 1,
+            "kind": "commit"
+          }
+        ]
+      },
+      "git": {
+        "branch": "main"
+      },
+      "title": "change the filesafter undo",
+      "totalCost": 0,
+      "aggregatedAgentsCost": 0,
+      "usage": {
+        "inputTokens": 20,
+        "outputTokens": 10,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "totalCost": 0
+      },
+      "aggregateUsage": {
+        "inputTokens": 20,
+        "outputTokens": 10,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "totalCost": 0
+      }
+    },
+    "messages_path": "/capture-root____/s/undo/fakehome/.cline/data/sessions/0000000000006_00000/0000000000006_00000.messages.json"
+  }
+]

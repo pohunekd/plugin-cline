@@ -1,0 +1,64 @@
+[
+  {
+    "version": 1,
+    "session_id": "c0ffee00-0000-4000-8000-000000000001",
+    "source": "cli",
+    "started_at": "2026-11-06T00:17:32.290Z",
+    "ended_at": "2026-11-06T00:17:41.606Z",
+    "exit_code": 0,
+    "status": "cancelled",
+    "interactive": true,
+    "provider": "openai-compatible",
+    "model": "stub-model",
+    "cwd": "/capture-root____/s/cancel-escape-subagent/ws",
+    "workspace_root": "/capture-root____/s/cancel-escape-subagent/ws",
+    "team_name": "team-00012",
+    "enable_tools": true,
+    "enable_spawn": true,
+    "enable_teams": true,
+    "prompt": "<user_input mode=\"act\">a turn to cancel</user_input>",
+    "metadata": {
+      "sessionHistoryOrigin": {
+        "mode": "user",
+        "version": "3.0.74"
+      },
+      "git": {
+        "branch": "main"
+      },
+      "checkpoint": {
+        "latest": {
+          "ref": "0000000000000000000000000000000000000001",
+          "createdAt": 1793924254382,
+          "runCount": 1,
+          "kind": "commit"
+        },
+        "history": [
+          {
+            "ref": "0000000000000000000000000000000000000001",
+            "createdAt": 1793924254382,
+            "runCount": 1,
+            "kind": "commit"
+          }
+        ]
+      },
+      "title": "a turn to cancel",
+      "totalCost": 0,
+      "aggregatedAgentsCost": 0,
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "totalCost": 0
+      },
+      "aggregateUsage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "totalCost": 0
+      }
+    },
+    "messages_path": "/capture-root____/s/cancel-escape-subagent/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/c0ffee00-0000-4000-8000-000000000001.messages.json"
+  }
+]

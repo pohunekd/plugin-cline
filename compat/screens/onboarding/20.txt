@@ -1,0 +1,40 @@
+  Connect a model
+  provider to get
+  started.
+
+  ╭──────────────╮
+  │   Sign in    │
+  │   with       │
+  │   Cline      │
+  │   Latest     │
+  │ ☺ models   → │
+  │   with       │
+  │   regular    │
+  │   free       │
+  │   promos     │
+  ╰──────────────╯
+  ╭──────────────╮
+  │   Sign in    │
+  │   with       │
+  │   ClinePass  │
+  │ ✦ Low cost   │
+  │   subscripti │
+  │   on for eve │
+  │   ryone      │
+  ╰──────────────╯
+  ╭──────────────╮
+  │   Sign in    │
+  │   with       │
+  │   ChatGPT    │
+  │ ✦ Use your   │
+  │   ChatGPT    │
+  │   Plus       │
+  │   subscripti │
+  │   on         │
+  ╰──────────────╯
+  ╭──────────────╮
+  │   Bring      │
+  │   your own   │
+  │   provider   │
+  │ ⚷ API key    │
+  │   or local   │

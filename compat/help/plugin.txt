@@ -1,0 +1,11 @@
+Usage: cline plugin [options] [command]
+
+Manage Cline Plugins
+
+Options:
+  -h, --help                         display help for command
+
+Commands:
+  install|i [options] <source>       Install a Cline Plugin from an official
+                                     keyword, npm, git, URL, or a local path
+  uninstall|remove [options] <name>  Uninstall a Cline Plugin by name or path

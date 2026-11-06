@@ -1,0 +1,16 @@
+.
+./db
+./db/sessions.db
+./db/sessions.db-shm
+./db/sessions.db-wal
+./db/teams.db
+./db/teams.db-shm
+./db/teams.db-wal
+./sessions
+./sessions/c0ffee00-0000-4000-8000-000000000001
+./sessions/c0ffee00-0000-4000-8000-000000000001/c0ffee00-0000-4000-8000-000000000001.json
+./sessions/c0ffee00-0000-4000-8000-000000000001/c0ffee00-0000-4000-8000-000000000001.messages.json
+./sessions/c0ffee00-0000-4000-8000-000000000001/helper__000001.messages.json
+./settings
+./settings/global-settings.json
+./settings/providers.json
