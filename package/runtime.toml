@@ -1,0 +1,91 @@
+# Runtime descriptor of the Cline CLI package.
+#
+# Verified against Cline 3.0.74 (compat/RELEASE). Phase 1 limit: in `auto`
+# backend mode a launch attaches to a running Cline hub, or starts one that
+# outlives the session (compat/hub/), so hub routing is not controlled until
+# the handler of the next phase; the package is not admitted before then.
+
+schema = 1
+id = "pohunek.runtime.cline"
+version = "0.1.0"
+runtime_api = 1
+requires = ["launch-env-v1", "input-refuse-while-blocked-v1"]
+
+[runtime]
+id = "cline"
+name = "Cline CLI"
+program = "cline"
+# No `--auto-approve` argument: Cline's own approval setting applies, and
+# Shift+Tab in a session persists that setting globally.
+args = []
+detect_manifest = "detect.toml"
+# Typed into the composer once it is drawn: a prompt word can select a
+# subcommand (`cline -i version` prints the version).
+prompt_arg = false
+# `cline --version` prints the release alone on stdout, also through the Node
+# wrapper (compat/install/version.txt).
+# STOPGAP: `below` is mandatory, so the open-ended range `>=3.0.74` is not
+# expressible; the next major bounds it until zajca/pohunek#1963 lands.
+version_probe = { parser = "semver-v1", args = ["--version"], min = "3.0.74", below = "4.0.0" }
+
+# Cline replaces its install in the background at exit (npm, pnpm, yarn and
+# bun installs) unless told not to; a pinned release must not change under a
+# running host. The notice variable keeps the one-time promo modals from
+# taking the first key of the initial input.
+[launch_env]
+CLINE_NO_AUTO_UPDATE = "1"
+CLINE_DISABLE_CLINE_PASS_NOTICE = "1"
+
+# Bracketed paste is enabled before the composer draws, so only the rendered
+# composer (detect rule `idle_composer`) shows that Cline reads input.
+[input]
+bracketed_paste = true
+# The capture kit pauses 0.5 s between typed text and Enter, because an Enter
+# in the same burst is read as part of the paste (scripts/capture TYPE_PAUSE);
+# a shorter delay is unverified.
+submit_delay_ms = 500
+text_policy = "unrestricted"
+ready = "screen_idle"
+# The approval box takes `y`/`n` but also approves on Enter or any typed
+# answer (compat/screens/approval-*), and the other dialogs take Enter as a
+# choice, so text sent while one shows would answer it unseen; the operator
+# answers through `pohunek attach`.
+refuse_while_blocked = true
+
+# Cline creates a session under the id given to `--id`; with a known id the
+# same flag resumes it (TUI only).
+[resume]
+supported = true
+reference_kind = "id"
+args = ["--id", "{reference}"]
+
+# Cline forks only inside its TUI (`/fork`); no launch argument forks.
+[fork]
+supported = false
+
+# Core generates the id and Cline stores the session under it. The reference
+# goes stale after `/clear`, `/fork` or an in-TUI `/history` switch.
+[native_reference]
+strategy = "assigned"
+launch_args = ["--id", "{reference}"]
+
+# Recovery needs the session manifest `<id>/<id>.json`, which Cline writes at
+# the first prompt, below `<data root>/sessions`. The data root is
+# `CLINE_DATA_DIR`, else `<config home>/data`.
+[native_reference.existence]
+check = "file"
+root_env = "CLINE_DIR"
+root_home = ".cline"
+dir = "data/sessions"
+file_name = "{reference}.json"
+name_match = "exact"
+max_depth = 1
+store_env = "CLINE_DATA_DIR"
+store_max_depth = 2
+relocating_args = ["--data-dir", "--config"]
+
+# `CLINE_DIR` holds hooks, plugins, agents and rules, and the data root below
+# it by default.
+[config_home]
+env = "CLINE_DIR"
+default = ".cline"

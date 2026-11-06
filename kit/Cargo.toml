@@ -1,0 +1,14 @@
+[package]
+name = "cline-plugin-kit"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Stand-in for the pohunek plugin kit: lints, builds and checks the Cline package against core."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+pohunek-daemon = { git = "https://github.com/zajca/pohunek", rev = "368a2d32cbc429eb5789bc73b9e53b562ac020e7" }
+pohunek-package = { git = "https://github.com/zajca/pohunek", rev = "368a2d32cbc429eb5789bc73b9e53b562ac020e7" }
+pohunek-protocol = { git = "https://github.com/zajca/pohunek", rev = "368a2d32cbc429eb5789bc73b9e53b562ac020e7" }

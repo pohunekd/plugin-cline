@@ -1,0 +1,221 @@
+# Cline CLI activity manifest.
+#
+# Screens come from Cline 3.0.74 (compat/screens). Phrases that no capture
+# shows are marked `unverified`. Cline emits no OSC status record and no BEL;
+# its title carries the prompt text, not a state (compat/terminal/), so every
+# rule reads the screen.
+
+# The npm wrapper is a Node script that spawns the binary: the PTY root is
+# `node` (comm `node-MainThread`) and its child is the binary, comm `cline`
+# (`.cline` with the postinstall cache; compat/install/process-*.txt). The
+# hub daemon (`cline --cline-hub-daemon`) and plugin workers carry the same
+# comm; they are not distinguishable by name.
+[process]
+comm = ['^\.?cline$']
+cmdline = [
+  '^(\S*/)?\.?cline($| )',
+  '^(\S*/)?node (\S*/)?bin/cline($| )',
+]
+
+# Dialogs that replace the composer read `after_last_horizontal_rule`: the text
+# below the last full-width rule. With the composer drawn that is only the
+# footer, so a transcript that quotes a dialog phrase stays unblocked, and a
+# dialog draws no rule below its own buttons. Text the model controls (the
+# command in the approval box, the question and its options) can carry a line
+# of U+2500 characters; the rules therefore match the static text at the
+# bottom of the dialog, below anything the model prints, and fail closed.
+
+# `Cline needs permission` / `Approve tool call?` / the command / the buttons
+# `[y] Approve   [n] Deny`. The buttons sit below the command, so a rule line
+# in the command (compat/screens/approval-rule-line) does not hide them. The
+# `Thinking...` line shows at the same time, so this outranks working.
+[[rules]]
+id = "approval"
+state = "blocked"
+priority = 980
+region = "after_last_horizontal_rule"
+visible_blocker = true
+regex = [
+  '\[y\]',
+  '\[n\]',
+  'Approve',
+]
+
+# `Cline is asking a question` / question / options, ending with the entry
+# `Type a response...`. The title is always drawn; the entry is the last row of
+# a fixed-height list and scrolls out of view when there are many options (at
+# 80x24, compat/screens/question-clipped), and it turns into the typed text. A
+# line of `─` in the question text moves the region start below the title, so
+# a rule line together with a clipped list is not matched (README, Limits).
+[[rules]]
+id = "question"
+state = "blocked"
+priority = 980
+region = "after_last_horizontal_rule"
+visible_blocker = true
+any = [
+  { regex = ['Cline\s+is\s+asking\s+a\s+question'] },
+  { regex = ['Type\s+a\s+response'] },
+]
+
+# `Welcome to Cline` / `Connect a model provider to get started.`
+[[rules]]
+id = "onboarding"
+state = "blocked"
+priority = 980
+region = "after_last_horizontal_rule"
+visible_blocker = true
+any = [
+  { regex = ['Welcome\s+to\s+Cline'] },
+  { regex = ['Connect\s+a\s+model\s+provider'] },
+]
+
+# `Choose a provider` and `Set model ID` are captured; `Choose a model` is
+# unverified (source only).
+[[rules]]
+id = "provider_picker"
+state = "blocked"
+priority = 980
+region = "after_last_horizontal_rule"
+visible_blocker = true
+any = [
+  { regex = ['Choose\s+a\s+provider'] },
+  { regex = ['Choose\s+a\s+model'] },
+  { regex = ['Set\s+model\s+ID'] },
+]
+
+# `Signing in with <label>`, `Waiting for sign-in...` are captured; `Your
+# code:` (device-code screen) is unverified (source only).
+[[rules]]
+id = "oauth_wait"
+state = "blocked"
+priority = 980
+region = "after_last_horizontal_rule"
+visible_blocker = true
+any = [
+  { regex = ['Signing\s+in\s+with'] },
+  { regex = ['Waiting\s+for\s+sign-in'] },
+  { regex = ['Your\s+code:'] },
+]
+
+# API-key form: `Tab to switch fields, Enter to save, Esc to go back`.
+[[rules]]
+id = "api_key_form"
+state = "blocked"
+priority = 980
+region = "after_last_horizontal_rule"
+visible_blocker = true
+any = [
+  { regex = ['Enter\s+to\s+save'] },
+  { regex = ['Paste\s+your\s+API\s+key'] },
+]
+
+# One-time promo modals. The composer stays drawn behind the modal, so the
+# footer is paired with the modal title.
+[[rules]]
+id = "promo_modal"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+regex = ['Press\s+Enter\s+to\s+open']
+all = [
+  { any = [
+    { regex = ['Try\s+ClinePass'] },
+    { regex = ['Cline\s+Desktop'] },
+  ] },
+]
+
+# `Cline Hub update required` and `Cline Hub was updated`: unverified, source
+# only (no capture shows them, so whether the composer stays drawn behind them
+# is unknown); the whole screen is read so the dialog blocks either way. Both
+# end with `Press Enter to update`, which the 1.8 s toast of the same title
+# lacks.
+[[rules]]
+id = "hub_dialog"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+regex = ['Press\s+Enter\s+to\s+update']
+any = [
+  { regex = ['Cline\s+Hub\s+update\s+required'] },
+  { regex = ['Cline\s+Hub\s+was\s+updated'] },
+]
+
+# `/fork` confirm: `Create a fork of the current conversation?` /
+# `Y/Enter to confirm, N/Esc to cancel`. The composer stays drawn.
+[[rules]]
+id = "fork_confirm"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+regex = ['Create\s+a\s+fork\s+of\s+the\s+current']
+all = [
+  { regex = ['Esc\s+to\s+cancel'] },
+]
+
+# `/history` and `/undo` pickers; Enter resumes or restores the highlighted
+# entry. The composer stays drawn.
+[[rules]]
+id = "history_picker"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+regex = ['Session\s+History']
+all = [
+  { regex = ['Enter\s+to\s+resume'] },
+]
+
+# `/undo`: the checkpoint list ends with `Enter to select, Esc to cancel`, the
+# restore choice with `Enter to confirm, Esc to cancel`.
+[[rules]]
+id = "undo_picker"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+regex = [
+  'Restore\s+to\s+Checkpoint',
+  'Enter\s+to\s+select',
+]
+
+[[rules]]
+id = "undo_confirm"
+state = "blocked"
+priority = 980
+region = "whole_recent"
+visible_blocker = true
+regex = [
+  'Restore\s+chat\s+only',
+  'Enter\s+to\s+confirm',
+]
+
+# A running turn: `⠇ Thinking... (esc to cancel)` before the first content,
+# then a spinner-led tool row, `⠧ run_commands(sleep 8)`. Finished rows lead
+# with `*`. The composer stays drawn during a turn, so these outrank
+# `idle_composer`; a dialog (priority 980) outranks them.
+[[rules]]
+id = "working_thinking"
+state = "working"
+priority = 960
+region = "whole_recent"
+line_regex = ['^\s*[\x{2801}-\x{28FF}]\s+Thinking\.\.\.']
+
+[[rules]]
+id = "working_spinner_row"
+state = "working"
+priority = 960
+region = "whole_recent"
+line_regex = ['^\s*[\x{2801}-\x{28FF}]\s+\S']
+
+# The composer is the prompt box body between the two rule lines: `❯ What can
+# I do for you?` (home), `❯ Ask anything...` (chat).
+[[rules]]
+id = "idle_composer"
+state = "idle"
+priority = 950
+region = "prompt_box_body"
+line_regex = ['^\s*\x{276F}']
