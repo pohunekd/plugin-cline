@@ -4,19 +4,22 @@
 # handler keeps every launch inside the TUI's process tree (the default mode
 # attaches to a running Cline hub, or starts one that outlives the session,
 # compat/hub/) and installs the reporter hooks that follow the session
-# identity and its subagents. Every feature in `requires` exists from core
-# 0.42.0; the minimum core is 0.44.0, the release the kit (kit/Cargo.toml) and
-# the smoke ran against.
+# identity and its subagents. `transcripts-cline-session-v1` makes a foreground
+# `cline` started outside any Pohunek session attributable through its session
+# store. The minimum core is 0.45.0, the first release with that feature; the
+# kit (kit/Cargo.toml) and the smoke run against the core revision that
+# carries it.
 
 schema = 1
 id = "pohunek.runtime.cline"
-version = "0.1.0"
+version = "0.2.0"
 runtime_api = 1
 requires = [
   "launch-env-v1",
   "input-refuse-while-blocked-v1",
   "integration-cline-hook-v1",
   "placement-v1",
+  "transcripts-cline-session-v1",
   "version-probe-open-range-v1",
 ]
 
@@ -111,3 +114,13 @@ relocating_args = ["--data-dir", "--config"]
 [config_home]
 env = "CLINE_DIR"
 default = ".cline"
+
+# Observation of a `cline` started outside any Pohunek session (a Pohunek
+# shell session's descendants are not matched): core reads the session manifest `<id>/<id>.json` below
+# `data/sessions` of the config home. A subagent id (`__`) and the
+# `*.messages.json` files are not sessions. A profile that sets only
+# `CLINE_DATA_DIR` moves the store out of reach of `[config_home]` and is not
+# followed (README, Transcripts).
+[transcripts]
+parser = "cline-session-v1"
+dir = "data/sessions"

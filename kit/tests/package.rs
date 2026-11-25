@@ -14,7 +14,7 @@ use package::directory::build_directory_archive;
 use package::{read_archive, Limits};
 use pohunek_daemon::agent::host::{
     definition_from_archive, HandlerId, InputReadiness, LaunchProgram, Placement,
-    RuntimeDefinition,
+    RuntimeDefinition, TranscriptParser,
 };
 use pohunek_daemon::agent::NativeReferenceStrategy;
 use pohunek_daemon::detect::{DetectionConfig, Detector, DetectorConfig, Manifest};
@@ -118,6 +118,50 @@ fn the_descriptor_declares_the_launch_contract_of_the_captured_release() {
         Some(true),
         "the handler keeps the in-process placement local"
     );
+    let transcripts = definition
+        .transcripts()
+        .expect("the descriptor declares the session store for observation");
+    assert_eq!(
+        (transcripts.parser(), transcripts.dir()),
+        (TranscriptParser::ClineSessionV1, "data/sessions"),
+        "a foreground cline is attributed through <config home>/data/sessions"
+    );
+    assert!(
+        transcripts.root().is_none() && transcripts.max_depth().is_none(),
+        "the store follows [config_home]: no second root variable"
+    );
+}
+
+/// The file names of one captured session directory (`tree.txt`) that the
+/// parser reads: the root manifest only. The `*.messages.json` files of the
+/// root and of its subagents are never opened.
+#[test]
+fn the_session_parser_reads_the_root_manifest_and_no_messages_file() {
+    for scenario in ["assigned-subagent", "team"] {
+        let tree = read(&format!("compat/sessions/{scenario}/tree.txt"));
+        let read_by_parser: Vec<&str> = tree
+            .lines()
+            .filter(|line| line.contains("/sessions/") && line.ends_with(".json"))
+            .filter(|line| TranscriptParser::ClineSessionV1.reads(Path::new(line)))
+            .collect();
+        assert_eq!(
+            read_by_parser.len(),
+            1,
+            "{scenario}: one manifest is read, got {read_by_parser:?}"
+        );
+        assert!(
+            !read_by_parser[0].ends_with(".messages.json"),
+            "{scenario}: {read_by_parser:?}"
+        );
+        let listed_messages = tree
+            .lines()
+            .filter(|line| line.ends_with(".messages.json"))
+            .count();
+        assert!(
+            listed_messages >= 2,
+            "{scenario}: the capture lists the root's and a subagent's messages file"
+        );
+    }
 }
 
 #[test]

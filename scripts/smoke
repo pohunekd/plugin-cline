@@ -6,7 +6,11 @@
 # and asserts launch, input, status, approval refusal, resume, local placement
 # beside a running Cline hub, the reported session reference across `/clear`
 # and `/fork`, a reported subagent, and that install, doctor and uninstall
-# leave a foreign hook byte-identical.
+# leave a foreign hook byte-identical. It then asserts the observation of a
+# `cline` started in a plain shell of the namespace (attributed through its
+# data root, subagent manifests and `*.messages.json` files ignored) and that
+# two profiles on one config home differ only by their own provider key
+# variables.
 #
 # Everything (daemon, workers, Cline, the model stub) runs in user, network,
 # mount, UTS and PID namespaces: only a loopback interface, a private process
@@ -54,6 +58,15 @@ STUB_MODEL=stub-model
 # File the stub's scripted command creates in the workspace once approved.
 APPROVAL_MARKER=smoke-approved
 PROMPT="smoke prompt"
+# Synthetic provider keys of P3-D3: names that exist in no provider, values
+# that are placeholders. The owner pair is set in the daemon's environment
+# only; the two profile pairs are the profiles' own `[env]` entries.
+OWNER_ENV_NAME=OWNER_ONLY_API_KEY OWNER_ENV_VALUE=smoke-placeholder-owner
+PROFILE_A_NAME=ACME_API_KEY PROFILE_A_VALUE=smoke-placeholder-a
+PROFILE_B_NAME=ZENITH_API_KEY PROFILE_B_VALUE=smoke-placeholder-b
+# Seconds a negative observation (an id that must not become the agent's
+# session) is watched after its positive control passed.
+SETTLE_SECONDS=4
 # Characters a path may hold; the namespace commands carry paths as arguments.
 SAFE_PATH_RE='^[A-Za-z0-9._/+-]+$'
 
@@ -91,7 +104,7 @@ BIN_SHA="$(sed -n 's/^@cline\/cli-linux-x64\.bin\.sha256=//p' "$REPO/compat/RELE
 # --- host stage: checks, scratch root, namespace --------------------------
 
 if [[ "${SMOKE_STAGE:-host}" == host ]]; then
-  for tool in unshare ip jq sha256sum cp git readlink sed python3 pgrep hostname node; do
+  for tool in unshare ip jq sha256sum cp git readlink sed python3 pgrep hostname node tmux; do
     command -v "$tool" >/dev/null 2>&1 || die "missing tool: $tool"
   done
   unshare --help 2>&1 | grep -q -- '--map-user' || die "unshare lacks --map-user (util-linux 2.38 or later)"
@@ -271,7 +284,8 @@ jq -n --argjson hold "$HOLD_SECONDS" --arg cmd "touch $APPROVAL_MARKER" '[
   {text: "Identity reply fork."},
   {tool: "spawn_agent", args: {systemPrompt: "You are a helper.", task: "Say done."}},
   {text: "Subagent says done.", unless_tool: "team_status"},
-  {text: "Parent saw the subagent."}]' >"$ROOT/stub/script.json"
+  {text: "Parent saw the subagent."},
+  {text: "Shell reply."}]' >"$ROOT/stub/script.json"
 : >"$ROOT/stub/requests.jsonl"
 python3 -I "$SCRIPT_DIR/model-stub" --port "$STUB_PORT" --script "$ROOT/stub/script.json" \
   --log "$ROOT/stub/requests.jsonl" 2>"$ROOT/stub/stub.err" &
@@ -289,7 +303,11 @@ cline_env() {
   >"$ROOT/stage/auth.out" 2>&1 || die "cline auth failed: $(tail -n 3 "$ROOT/stage/auth.out")"
 
 # --- daemon -----------------------------------------------------------------
-isolated "$CORE_BIN/pohunek" daemon start --dev-subprocess >"$ROOT/daemon.log" 2>&1 &
+# The daemon observes agents started outside Pohunek (P3-D1, opt-in). The
+# placeholder stands for a provider key in the owner's environment: the dev
+# daemon's launch allowlist does not forward it (P3-D3).
+isolated POHUNEK_OBSERVE_EXTERNAL_AGENTS=1 "$OWNER_ENV_NAME=$OWNER_ENV_VALUE" \
+  "$CORE_BIN/pohunek" daemon start --dev-subprocess >"$ROOT/daemon.log" 2>&1 &
 DAEMON_PID=$!
 wait_for "the isolated daemon" pk health
 socket="$RT_DIR/pohunek/daemon.sock"
@@ -311,7 +329,7 @@ pk plugin doctor | grep -q 'No problems found' || die "plugin doctor reports a p
 # package's handler: core refuses a launch whose environment sets
 # CLINE_SANDBOX or CLINE_SANDBOX_DATA_DIR, so none is set here. `cline-approve`
 # also turns Cline's approval on, as the approval scenario needs.
-profile() { # <name> <args toml>
+profile() { # <name> <args toml> [<extra [env] line>]
   cat >"$HOME_DIR/.config/pohunek/agents/$1.toml" <<EOF
 base = "cline"
 package = "dev.runtime.cline"
@@ -323,6 +341,7 @@ CLINE_DIR = "$CLINE_DIR_PATH"
 CLINE_DATA_DIR = "$CLINE_DATA"
 CLINE_HUB_PORT = "$HUB_PORT"
 CLINE_HUB_DISCOVERY_PATH = "$HUB_DISCOVERY"
+${3:-}
 EOF
   chmod 600 "$HOME_DIR/.config/pohunek/agents/$1.toml"
 }
@@ -627,6 +646,142 @@ done
 [[ -d "$HOOKS_DIR" ]] || die "uninstall removed the hooks directory"
 [[ "$(foreign_sums)" == "$foreign_before" ]] || die "uninstall changed a foreign hook"
 log "P2-D4: install, status, doctor and uninstall left the foreign hooks byte-identical; uninstall removed the six reporter files"
+
+# --- P3-D1: a foreground cline started in a shell is attributed through its data root
+# core observes an agent only when no session of the daemon owns its process,
+# so the shell is a tmux pane of the namespace, not a Pohunek session (a cline
+# below a Pohunek shell session reads `cline`, without a session id, in
+# `active_agent_base`; unverified with the reporter installed). The command
+# line carries the variables a launch through the package would set: the
+# config home, the local-session pair (otherwise this cline would start or
+# join a hub) and the two launch variables.
+TMUX_SOCKET="$ROOT/tmux.sock"
+tm() { isolated tmux -S "$TMUX_SOCKET" -f /dev/null "$@"; }
+# A working directory of its own: core attributes the newest manifest of the
+# process's working directory, and the sessions above ran in $WS.
+FG_WS="$ROOT/fgws"
+mkdir -p "$FG_WS"
+tm new-session -d -x 120 -y 30 -s fg -c "$FG_WS" /bin/bash --norc
+fg_screen_has() { tm capture-pane -p -t fg | grep -q -- "$1"; }
+tm send-keys -t fg -l "CLINE_DIR=$CLINE_DIR_PATH CLINE_SANDBOX=1 CLINE_SANDBOX_DATA_DIR=$CLINE_DATA CLINE_NO_AUTO_UPDATE=1 CLINE_DISABLE_CLINE_PASS_NOTICE=1 cline"
+tm send-keys -t fg Enter
+wait_for "the shell's foreground cline to draw its composer" fg_screen_has 'What can I do for you'
+# The observed rows of the foreground cline: external, agent base cline. The
+# node wrapper and the binary below it both match the process rules, so
+# there are two rows; they agree on the session id its manifest names
+# (`none` until the first prompt wrote one).
+EXTERNAL_ROWS='[.ok[] | select(.external == true and .agent_base == "cline")]'
+external_native() {
+  pk session list --json | jq -r "$EXTERNAL_ROWS | if length == 0 then \"rows:0\" else ([.[] | .native_session_id // \"none\"] | unique | join(\",\")) end"
+}
+attributed_is() { [[ "$(external_native)" == "$1" ]]; }
+wait_for "the observer to list the shell's cline without a session id" attributed_is none
+tm send-keys -t fg -l "shell prompt"
+# Cline reads an Enter that arrives with the text as part of a paste.
+sleep 1
+tm send-keys -t fg Enter
+wait_for "the shell's cline to answer" fg_screen_has 'Shell reply'
+SESSIONS_DIR="$CLINE_DATA/sessions"
+fg_id=""
+for manifest in "$SESSIONS_DIR"/*/*.json; do
+  [[ "$manifest" != *.messages.json ]] || continue
+  if [[ "$(jq -r .cwd "$manifest")" == "$FG_WS" ]]; then fg_id="$(jq -r .session_id "$manifest")"; fi
+done
+[[ -n "$fg_id" && -f "$SESSIONS_DIR/$fg_id/$fg_id.json" ]] || die "the shell's cline wrote no manifest for $FG_WS below $SESSIONS_DIR"
+wait_for "the observer to attribute cline session $fg_id" attributed_is "$fg_id"
+pk session list --json | jq -e --arg ws "$FG_WS" --arg id "$fg_id" \
+  "$EXTERNAL_ROWS | length > 0 and all(.native_session_id == \$id and .cwd == \$ws)" >/dev/null ||
+  die "an observed row does not carry session $fg_id and $FG_WS"
+row="$(pk session list --json | jq -c "$EXTERNAL_ROWS | .[0] | {external, agent_base, native_session_id, cwd}")"
+assert_no_hub "while the shell's cline ran"
+log "P3-D1: the observed row of the shell's foreground cline: $row (manifest $fg_id/$fg_id.json)"
+
+# --- P3-D2: subagent manifests (`__` ids) and *.messages.json files are not sessions ----
+# The manifests are the captured one (compat/sessions/assigned-subagent), with
+# the session id and the working directory rewritten: the working directory
+# is the foreground process's, because core picks the newest manifest of that
+# directory for a process. The root manifest is the positive control; a
+# candidate that were read would replace it as the observed session id, and a
+# sentinel written last shows the observer had caught up with the candidates.
+CAPTURED_MANIFEST="$REPO/compat/sessions/assigned-subagent/manifests.json"
+CONTROL_ID=c0ffee00-0000-4000-8000-000000000001
+SUBAGENT_ID="${CONTROL_ID}__agent_00000000-0000-4000-8000-000000000002"
+MESSAGES_ID=c0ffee00-0000-4000-8000-0000000000a1
+SENTINEL_ID=c0ffee00-0000-4000-8000-000000000003
+put_manifest() { # <directory> <file name> <session id>
+  mkdir -p "$SESSIONS_DIR/$1"
+  jq --arg id "$3" --arg cwd "$FG_WS" '.[0] | .session_id = $id | .cwd = $cwd' "$CAPTURED_MANIFEST" >"$SESSIONS_DIR/$1/$2"
+}
+put_manifest "$CONTROL_ID" "$CONTROL_ID.json" "$CONTROL_ID"
+wait_for "the root manifest $CONTROL_ID to be attributed (control)" attributed_is "$CONTROL_ID"
+# Two seconds, so the sentinel's time (the control's second plus one) lies
+# strictly between the control's and the candidates'.
+sleep 2
+# Candidates that are not sessions, each newer than the control: the messages
+# files of the root and of its subagents sit in the root's directory (the
+# layout Cline writes), a manifest-shaped body in a `*.messages.json` file
+# sits in a directory of its own (the one candidate a parser that read
+# messages files would attribute), and a subagent id names a directory of its
+# own with a manifest.
+for messages in "$CONTROL_ID.messages.json" "helper__000001.messages.json" "agent_00000000-0000-4000-8000-000000000002.messages.json"; do
+  put_manifest "$CONTROL_ID" "$messages" "$CONTROL_ID"
+done
+put_manifest "$MESSAGES_ID" "$MESSAGES_ID.messages.json" "$MESSAGES_ID"
+put_manifest "$SUBAGENT_ID" "$SUBAGENT_ID.json" "$SUBAGENT_ID"
+seen=""
+for ((i = 0; i < SETTLE_SECONDS * 4; i++)); do
+  seen="$seen $(external_native)"
+  sleep "$FAST_POLL_SECONDS"
+done
+for sample in $seen; do
+  [[ "$sample" == "$CONTROL_ID" ]] || die "the observed session id left the root manifest while the candidates were watched: $seen"
+done
+# The sentinel is a readable manifest whose modification time lies between
+# the control's and the candidates': it outranks the control, and a candidate
+# that were read would outrank it.
+put_manifest "$SENTINEL_ID" "$SENTINEL_ID.json" "$SENTINEL_ID"
+touch -d "@$(($(stat -c %Y "$SESSIONS_DIR/$CONTROL_ID/$CONTROL_ID.json") + 1))" "$SESSIONS_DIR/$SENTINEL_ID/$SENTINEL_ID.json"
+wait_for "the sentinel manifest $SENTINEL_ID to be attributed" attributed_is "$SENTINEL_ID"
+sleep "$REFUSAL_SETTLE_SECONDS"
+attributed_is "$SENTINEL_ID" || die "a candidate that is not a session outranked the sentinel: $(external_native)"
+log "P3-D2: the subagent manifest ($SUBAGENT_ID) and the *.messages.json files never replaced the root manifest (control) and the older sentinel was attributed over them"
+tm kill-server
+
+# --- P3-D3: profiles differ by provider key variables only; no isolation --------------
+# Two profiles name different synthetic provider keys in their own `[env]`
+# (values below are placeholders), and the daemon's environment holds a third
+# one that the dev daemon's allowlist does not forward. Both profiles share
+# the config home and the data root, so they share hooks, store and
+# providers.json.
+profile cline-prov-a '[]' "$PROFILE_A_NAME = \"$PROFILE_A_VALUE\""
+profile cline-prov-b '[]' "$PROFILE_B_NAME = \"$PROFILE_B_VALUE\""
+pk session new --agent cline-prov-a --cwd "$WS" --name prov-a --yes >/dev/null
+pk session new --agent cline-prov-b --cwd "$WS" --name prov-b --yes >/dev/null
+wait_for "the first provider profile to read idle" want_activity prov-a idle
+wait_for "the second provider profile to read idle" want_activity prov-b idle
+env_of() { tr '\0' '\n' <"/proc/$(root_pid_of "$1")/environ"; }
+env_a="$(env_of prov-a)" env_b="$(env_of prov-b)"
+grep -q "^$PROFILE_A_NAME=" <<<"$env_a" || die "profile A's launch lacks $PROFILE_A_NAME"
+grep -q "^$PROFILE_B_NAME=" <<<"$env_b" || die "profile B's launch lacks $PROFILE_B_NAME"
+if grep -q "^$PROFILE_B_NAME=" <<<"$env_a"; then die "profile A's launch carries profile B's key variable"; fi
+if grep -q "^$PROFILE_A_NAME=" <<<"$env_b"; then die "profile B's launch carries profile A's key variable"; fi
+for env_text in "$env_a" "$env_b"; do
+  if grep -q "^$OWNER_ENV_NAME=" <<<"$env_text"; then die "the daemon's own $OWNER_ENV_NAME reached an agent"; fi
+  grep -qx "CLINE_DIR=$CLINE_DIR_PATH" <<<"$env_text" || die "a profile does not share the config home"
+  grep -qx 'CLINE_SANDBOX=1' <<<"$env_text" || die "a profile launch is not local"
+done
+assert_no_hub "with both provider profiles running"
+# No value of a placeholder key appears in the daemon log or in what the CLI
+# reports about the sessions.
+{ pk session list --json; pk session inspect "$(session_id prov-a)" --json; pk session inspect "$(session_id prov-b)" --json; } >"$ROOT/stage/prov-report.json"
+for value in "$PROFILE_A_VALUE" "$PROFILE_B_VALUE" "$OWNER_ENV_VALUE"; do
+  if grep -q -- "$value" "$ROOT/daemon.log" "$ROOT/stage/prov-report.json"; then die "a placeholder key value appears in the daemon log or a session report"; fi
+done
+# providers.json is plaintext: the stub key written by `cline auth` is there.
+grep -q -- "$STUB_KEY" "$CLINE_DATA/settings/providers.json" || die "providers.json does not hold the stub key"
+pk session stop "$(session_id prov-a)" >/dev/null
+pk session stop "$(session_id prov-b)" >/dev/null
+log "P3-D3: two profiles on one config home: A carries $PROFILE_A_NAME only, B $PROFILE_B_NAME only, the daemon's $OWNER_ENV_NAME reaches neither, no placeholder value in the daemon log or session reports, providers.json holds the stub key in plaintext"
 
 assert_no_hub "end of run"
 log "stub served: $(jq -r '[.reply] | @csv' "$ROOT/stub/requests.jsonl" | tr '\n' ' ')"

@@ -53,8 +53,8 @@ jobs:
 
   package:
     # Stand-in for the pohunek plugin kit (lint, double build, detect-check): it
-    # loads `package/` through the daemon crate of the core release named in
-    # kit/Cargo.toml.
+    # loads `package/` through the daemon crate of the core revision named in
+    # kit/Cargo.toml (a commit until core 0.45.0 is released, then its tag).
     name: package
     runs-on: ubuntu-24.04
     timeout-minutes: 45
