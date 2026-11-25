@@ -39,9 +39,10 @@ the epic #1; this repository's issues are P0-P5.
 - **Docs in the same PR** as the behaviour they describe.
 - **Testing policy.** Minimal tests: only for non-trivial logic and regressions
   in it. CI runs shellcheck, the stub syntax check, the capture dry run
-  (redaction and stub self tests) and the `package` job (`kit/` tests against
-  core and the committed screens); the CLI itself is not run in CI. No coverage
-  targets.
+  (redaction and stub self tests), the self tests of `scripts/drift-check` and
+  `scripts/drift-issue`, and the `package` job (`kit/` tests against core and
+  the committed screens); the CLI itself is not run in CI, only by the weekly
+  `drift` workflow. No coverage targets.
 - **PR bodies** use `Refs #N` only, never a closing keyword. No `Co-Authored-By`
   trailer, no generated-by footer.
 - **Comments** state what the code does or why, never the change history.
@@ -56,6 +57,9 @@ scripts/capture --root <dir> all                  # fetch the release and captur
 scripts/capture --root <dir> --release X.Y.Z all  # capture a newer release
 scripts/capture --root <dir> hooks errors         # single steps (after install)
 (cd kit && cargo test --locked)                   # package/ against core and compat/screens
+scripts/drift-check --fresh <out> [--stage <root>/stage] [--detect]   # compare a capture (--out <out>) with compat/
+scripts/drift-check --self-test                   # the comparison on fixtures from compat/
+scripts/drift-issue --self-test                   # the issue body of an oversized report
 scripts/smoke --root <dir> --core-bin <dir> --cline-prefix <dir>   # D2-D6 in a loopback-only namespace
 ```
 

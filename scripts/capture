@@ -62,6 +62,9 @@ GIT_IDENTITY=(GIT_AUTHOR_NAME=capture GIT_AUTHOR_EMAIL=capture@example.invalid
 LONG_STRING_FILTER='walk(if type == "string" and length > 80 and (startswith("/capture-root") | not) then "<" + (length | tostring) + " chars>" else . end)'
 HOST_FIELD_FILTER='walk(if type == "object" then with_entries(select(.key | test("^pid$|_pid$|^pid_|free_bytes") | not)) else . end)'
 
+# Exit status of a run in which a step missed an expectation.
+EXIT_MISSED=3
+
 STEPS_ALL=(install version onboarding promo turn dialogs hooks errors team history undo hub arch)
 
 export LANG=C.UTF-8 LC_ALL=C.UTF-8
@@ -473,6 +476,20 @@ pty_wait() {
   done
 }
 
+# pty_wait_gone <extended-regex> [timeout]: waits until the screen no longer
+# matches; the counterpart of pty_wait for a state that ends.
+pty_wait_gone() {
+  local re="$1" limit="${2:-$WAIT_TIMEOUT}" start
+  start="$(date +%s%N)"
+  while pty_screen | grep -Eq -- "$re"; do
+    sleep "$POLL"
+    if (($(date +%s%N) - start >= limit * 1000000000)); then
+      log "timeout waiting for /$re/ to leave the screen"
+      return 1
+    fi
+  done
+}
+
 # pty_idle: waits for the composer and the mode footer, then lets the frame
 # settle; input typed into the first frame is lost.
 pty_idle() {
@@ -650,11 +667,16 @@ hub_daemons_tree() {
   done
 }
 
-# assert_no_hub <context>: fails when a hub daemon runs in the namespace.
+# assert_no_hub <context>: records a miss when a hub daemon runs in the namespace.
 assert_no_hub() {
   local left
   left="$(hub_daemons)"
-  [[ -z "$left" ]] || die "hub daemon left after $1: $(hub_daemons_tree | redact)"
+  if [[ -n "$left" ]]; then
+    # A leftover hub is a finding about the CLI (the drift workflow reports
+    # it); the daemon is stopped so later steps start clean.
+    miss "hub daemon left after $1: $(hub_daemons_tree | redact | tr '\n' ';')"
+    kill_hubs
+  fi
 }
 
 # kill_hubs: stops the hub daemons this namespace started.
@@ -799,7 +821,7 @@ step_install() {
 }
 
 step_version() {
-  local w p bin s c
+  local w p bin s c subcommands=0
   w="$(wrapper_dir "$RELEASE")"
   p="$(platform_dir "$RELEASE")"
   bin="$p/bin/cline"
@@ -826,8 +848,9 @@ step_version() {
     [[ "$c" == help ]] && continue
     "$s/run" "$c" --help >"$s/help.txt" 2>&1 || miss "version: $c --help failed"
     emit "$OUT/help/$c.txt" <"$s/help.txt"
+    subcommands=$((subcommands + 1))
   done
-  expect "version: no subcommand help" compgen -G "$OUT/help/[a-z]*.txt" >/dev/null
+  expect "version: no subcommand help captured" test "$subcommands" -gt 0
   {
     printf 'wrapper package: cline %s (bin: %s)\n' "$(jq -r .version "$w/package.json")" "$(jq -c .bin "$w/package.json")"
     printf 'wrapper scripts: %s\n' "$(jq -c .scripts "$w/package.json")"
@@ -1361,7 +1384,19 @@ step_errors() {
       after='Session Summary'
     else
       pty_keys Escape
-      after='Ask anything'
+      # Each regex matches only the cancelled state: the composer prompt is
+      # also on screen while a turn runs, so the stream case waits for the
+      # spinner line to leave first. A running tool row shows a spinner glyph
+      # where the cancelled row shows `*`; the aborted subagent result carries
+      # the finish reason.
+      case "$how" in
+        escape-stream)
+          expect "cancel-$how: Thinking left the screen" pty_wait_gone 'Thinking' 20
+          after='Ask anything'
+          ;;
+        escape-tool) after='\* run_commands\(sleep 30\)' ;;
+        escape-subagent) after='"finishReason": "aborted"' ;;
+      esac
     fi
     sleep 4
     snap "cancel-$how" "$REF_WIDTH" "$after" 10
@@ -1802,7 +1837,7 @@ step_owned() {
     onboarding) echo "screens/onboarding screens/onboarding-byo-selected screens/provider-picker screens/provider-picker-search screens/api-key-form screens/model-step screens/signin-cline screens/signin-cline-after screens/signin-clinepass screens/signin-clinepass-after screens/signin-chatgpt screens/signin-chatgpt-after screens/signin-opened-urls.txt" ;;
     promo) echo "screens/promo screens/promo-launch-1 screens/promo-launch-2 screens/promo-launch-3 screens/promo-notices-state.json screens/promo-suppressed screens/promo-suppressed-launch-1 screens/promo-suppressed-launch-2 screens/promo-suppressed-launch-3 screens/promo-suppressed-state.txt" ;;
     turn) echo "install/process-sandbox-tui.txt screens/idle-home screens/idle-chat screens/working-thinking screens/working-tool-row screens/turn-done screens/exit-summary terminal stub/turn-requests.jsonl" ;;
-    dialogs) echo "screens/approval screens/approval-approved screens/question screens/question-answered screens/fork-confirm screens/approval-n screens/approval-text screens/approval-rule-line screens/question-clipped" ;;
+    dialogs) echo "screens/approval screens/approval-approved screens/question screens/question-answered screens/fork-confirm screens/approval-n screens/approval-enter screens/approval-ok screens/approval-text screens/approval-rule-line screens/question-clipped" ;;
     hooks) echo "hooks/assigned-first-turn hooks/assigned-subagent hooks/assigned-clear-switch hooks/assigned-after-clear hooks/assigned-fork-switch hooks/assigned-after-fork hooks/assigned-quit hooks/assigned-resume hooks/generated-id sessions/assigned-first-turn sessions/assigned-subagent sessions/assigned-after-fork sessions/assigned-resume sessions/generated-id screens/subagent screens/clear screens/forked screens/exit-summary-assigned screens/resume stub/hooks-requests.jsonl" ;;
     errors) echo "hooks/error-400 hooks/cancel-escape-stream hooks/cancel-escape-tool hooks/cancel-escape-subagent hooks/cancel-ctrl-c-stream hooks/headless-timeout headless sessions/error-400 sessions/cancel-escape-stream sessions/cancel-escape-tool sessions/cancel-escape-subagent sessions/cancel-ctrl-c-stream screens/error screens/cancel-escape-stream screens/cancel-escape-tool screens/cancel-escape-subagent screens/cancel-ctrl-c-stream stub/error-400-requests.jsonl" ;;
     team) echo "hooks/team sessions/team screens/team stub/team-requests.jsonl" ;;
@@ -2002,19 +2037,27 @@ main() {
     stub_stop
     pty_stop
     assert_no_hub "step $arg"
+    # The miss list is written first so the scan covers it too.
+    if ((${#MISSES[@]} > 0)); then
+      printf '%s\n' "${MISSES[@]}" >"$stage/MISSED.txt"
+    fi
     scan_evidence "$stage"
     OUT="$OUT_FINAL"
     if ((${#MISSES[@]} > 0)); then
       # A step that missed an expectation leaves compat/ as it was; its
       # staged files stay below the root for inspection.
-      printf '%s\n' "${MISSES[@]}" >"$stage/MISSED.txt"
       log "step $arg: ${#MISSES[@]} expectation(s) missed; compat/ keeps the previous evidence (see ${stage}/MISSED.txt)"
       failed+=("$arg")
       continue
     fi
     swap_step "$arg" "$stage"
   done
-  ((${#failed[@]} == 0)) || die "steps with missed expectations: ${failed[*]}"
+  # Exit status 3 is reserved for missed expectations (the drift workflow reads
+  # it); every other failure exits 1 or 2.
+  if ((${#failed[@]} > 0)); then
+    log "steps with missed expectations: ${failed[*]}"
+    exit "$EXIT_MISSED"
+  fi
 }
 
 main "$@"

@@ -107,6 +107,55 @@ macOS is not supported by this kit yet: `scripts/capture` refuses any
 platform but Linux (it has no `sandbox-exec` isolation path). The macOS arm64
 capture needs that path first and lands as `compat/macos-arm64/`.
 
+## Drift tracking
+
+The supported range has no upper bound the descriptor can state, so a newer
+Cline release is checked by capture instead. `.github/workflows/drift.yml`
+runs weekly (and on `workflow_dispatch`, optionally with `release` set to a
+release other than the newest). It installs the newest `cline` release from the
+npm registry, runs `scripts/capture all` against the loopback stub in the usual
+namespaces, and runs `scripts/drift-check --detect`, which compares the fresh
+output with `compat/`:
+
+- **screens**: the text of every scenario and width;
+- **hooks**: the shape of every hook payload (key paths and value types, not
+  values), the events and their counts (not their order) and the env names;
+- **process**: every process tree and after-session listing, and the number of
+  `--cline-hub-daemon` processes in each;
+- **help**: the `--help` text of every command;
+- **capture**: expectations the capture itself missed;
+- **detect**: the kit's tests (`detect.toml` rules, version probe) against the
+  fresh screens and banner.
+
+The job needs no secret and no model, and its token is read-only. On a
+difference a second job (the only one with `issues: write`) runs
+`scripts/drift-issue`: it finds the open issue labelled `cline-drift`, updates
+it and comments when the release changed, or creates it, so reruns never open a
+second one. Nothing edits `compat/`, `compat/RELEASE` or `package/`. The fresh
+evidence and the report are kept as the `drift` workflow artifact for 30 days.
+Locally, the same comparison is
+`scripts/capture --root <scratch> --out <fresh> all` followed by
+`scripts/drift-check --fresh <fresh> --stage <scratch>/stage --detect`;
+`scripts/drift-check --self-test` (also in CI) checks the comparison itself on
+the committed evidence.
+
+### Updating to a new Cline release
+
+1. Read the drift issue and the `drift` artifact (report, fresh evidence).
+2. Capture the release into the tree: `scripts/capture --root <scratch>
+   --release X.Y.Z all`. `compat/` and `compat/RELEASE` are replaced by the run;
+   a step that missed an expectation leaves its evidence unchanged and fails the
+   run, so fix the cause first.
+3. Review `git diff compat/` scenario by scenario: a changed screen, hook
+   payload or process tree is either harmless text or a change to the
+   descriptor (`package/detect.toml`, `package/runtime.toml`) and the kit's case
+   tables (`kit/tests/package.rs`). Run `(cd kit && cargo test --locked)`.
+4. Commit the evidence together with the descriptor changes it needs. The new
+   `compat/RELEASE` is the lock: the kit requires the probed banner to equal
+   its `release=` line. Moving it is the last edit, in the same pull request.
+5. Close the drift issue when that pull request merges; the next scheduled run
+   compares against the new evidence.
+
 ## Install and use
 
 The plugin is not in the plugin index yet. Install it from a checkout:
