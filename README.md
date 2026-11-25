@@ -9,7 +9,7 @@ terminal coding agent.
 | Package id | `pohunek.runtime.cline` |
 | Runtime id (`--agent`) | `cline` |
 | Upstream | Cline CLI by Cline Bot Inc. (Apache-2.0), npm package `cline` |
-| Status | **P2, placement and identity**: `package/` (launch, status, resume, local placement, reported session identity, subagents) for Cline 3.0.74 on Linux x86_64, proven against the P0 corpus and `scripts/smoke`. Minimum core is 0.44.0, the release the kit and the smoke ran against (every required feature exists from 0.42.0, older cores are unverified) |
+| Status | **P3, transcripts and profiles**: `package/` (launch, status, resume, local placement, reported session identity, subagents, observation of a `cline` started outside Pohunek) for Cline 3.0.74 on Linux x86_64, proven against the P0 corpus and `scripts/smoke`. **Minimum core is 0.45.0 and the package cannot be released before it**: `transcripts-cline-session-v1` ([zajca/pohunek#1954](https://github.com/zajca/pohunek/issues/1954)) is merged in core but in no release (core 0.44.0 is the latest); the kit and the smoke run against core commit `4f1b8689` (older cores are unverified, and one without the feature refuses the descriptor with `runtime_feature_unsupported`) |
 
 The plugin carries data and evidence only (descriptor, detect rules, captures).
 Handlers, reporters and parsers stay in the core repository
@@ -22,7 +22,7 @@ and the issues P0-P5 of this repository.
 |---|---|
 | `package/` | The runtime package: `runtime.toml` (launch contract) and `detect.toml` (process and screen rules) |
 | `kit/` | Stand-in for the plugin kit: a test crate that builds the package twice, installs it through core's definition path, reads the captured version banner and process trees, and runs the detection manifest on every screen of `compat/screens`, as a whole and rule by rule |
-| `scripts/smoke` | End-to-end check against a pohunek build and an installed Cline: isolated test daemon in a loopback-only namespace, reporter install, launch, input, status, approval refusal, resume, launch beside a running Cline hub, reported session reference across `/clear` and `/fork`, a reported subagent, foreign hooks left byte-identical |
+| `scripts/smoke` | End-to-end check against a pohunek build and an installed Cline: isolated test daemon in a loopback-only namespace, reporter install, launch, input, status, approval refusal, resume, launch beside a running Cline hub, reported session reference across `/clear` and `/fork`, a reported subagent, foreign hooks left byte-identical, a `cline` in a plain shell attributed through its data root, subagent manifests and `*.messages.json` files ignored, two profiles that differ by their provider key variables only |
 | `scripts/capture` | Capture kit (bash): fetches a release from the npm registry, checks its integrity, runs Cline in throwaway homes inside loopback-only namespaces and records what it shows, which hooks it runs and what it stores |
 | `scripts/model-stub` | Loopback OpenAI-compatible chat-completions stub (Python standard library): scripted text, tool calls and HTTP errors |
 | `scripts/hook-log` | Cline file hook that logs one hook call: payload, environment names, `CLINE_*`/`CAPTURE_*` values, ancestor processes |
@@ -219,8 +219,115 @@ What the package does:
 - Reads the screen only: Cline emits no OSC status record, and its title
   carries the prompt text (`compat/terminal/`).
 
+### Transcripts
+
+The descriptor's `[transcripts]` table names core's parser `cline-session-v1`
+and `dir = "data/sessions"` below `[config_home]` (`CLINE_DIR`, else
+`~/.cline`); it needs the runtime feature `transcripts-cline-session-v1`,
+listed in `requires`. **That feature is in no core release yet** (it is on
+core `main` as `4f1b8689`; the kit and the smoke run against that commit and
+the pin moves to the `v0.45.0` tag on release), so the package cannot be
+released before core 0.45.0.
+
+With `POHUNEK_OBSERVE_EXTERNAL_AGENTS=1` in the daemon's environment (opt-in;
+core's contract is `docs/knowledge/guides/runtime-packages.md`, "Cline
+session manifests") the daemon watches `<CLINE_DIR>/data/sessions` of the
+runtime's own home and of every host profile of it, and matches a running
+`cline` that no Pohunek session owns to a manifest by working directory
+(newest manifest wins). The parser reads only `<id>/<id>.json` (at most 64
+KiB, `session_id` equal to the directory name, an absolute `cwd`); an id with
+`__` (a subagent) is never a session, and `*.messages.json` files are never
+opened. A subagent in the captured 3.0.74 store has a row `<root>__<agent>`
+and a messages file in the root's directory, but no manifest of its own
+(`compat/sessions/assigned-subagent/tree.txt`, `team/tree.txt`); the smoke
+writes one, derived from the captured manifest, to show it is ignored.
+
+Observed in the smoke (P3-D1), a `cline` typed into a plain shell of the
+namespace, one stub turn, then `pohunek session list --json`:
+
+```json
+{"external":true,"agent_base":"cline","native_session_id":"<13 digits>_<5 characters>","cwd":"<the shell's working directory>"}
+```
+
+The id is the manifest's, which Cline writes at the first prompt: before it
+the row carries no id. The wrapper (`node`) and the binary below it both match
+the process rules, so the observer lists two rows with the same id (seen in
+development runs; the smoke requires every row to carry it).
+
+### Profiles
+
+The package defines no profile isolation. A host profile of `cline`
+(`~/.config/pohunek/agents/<name>.toml`, `base = "cline"`) only adds `args` and
+`[env]`; everything Cline keeps (hooks, plugins and rules below `CLINE_DIR`,
+the store, `settings/providers.json` below the data root) belongs to the config
+home and data root the profile names, so two profiles on one home share all of
+it. Provider credentials reach the agent through its environment; what
+Cline does with a provider variable (which names it reads, whether it prefers
+them to `providers.json`) is not captured here (unverified, the smoke
+configures its stub provider through `cline auth`).
+
+Two ways to get a provider key into a launch, with synthetic names:
+
+```toml
+# ~/.config/pohunek/agents/cline-acme.toml
+base = "cline"
+[env]
+ACME_API_KEY = "<provider key>"      # stored in this file as plain text
+
+# ~/.config/pohunek/agents/cline-zenith.toml
+base = "cline"
+[env]
+ZENITH_API_KEY = "<provider key>"
+```
+
+- **A profile `[env]` entry** is per profile, and its value is plain text in a
+  file (keep it mode 0600; core refuses only a profile writable by others). The smoke runs two such profiles side by side on one config
+  home with placeholder values: each launch carries its own variable and
+  not the other's, both carry the same `CLINE_DIR` and `CLINE_SANDBOX=1`.
+- **The owner's environment**: core forwards only the variables the daemon's
+  allowlist names (`service.toml` `[environment] allowlist`), host-wide and
+  not per profile, so a key listed there reaches every agent the daemon
+  launches and no value is written to a profile. That route is core's
+  documented contract and is not driven here: the smoke's dev daemon has a
+  fixed default allowlist, and the smoke shows only that a variable in the
+  daemon's environment outside it reaches no agent.
+
+No value of a key belongs in `package/`, a fixture or this README, and the
+smoke checks that its placeholder values appear neither in the daemon log nor
+in `session list` and `session inspect`.
+
+**Credentials are plain text.** Cline's `<data root>/settings/providers.json`
+holds the provider settings, an API key entered through `cline auth` or the
+TUI included, as plain JSON readable by every process of the user (the smoke
+asserts its stub key is in that file). Profiles that share a data root share
+it. The package never reads, copies or edits it; `scripts/capture` does not
+copy it either.
+
+**A profile that sets only `CLINE_DATA_DIR`** moves Cline's store without
+moving the config home, so core's parser, which reads `data/sessions` of the
+config home, does not follow it: its sessions are not attributed. Set
+`CLINE_DIR` to a home whose `data/` is the store (or leave both unset).
+
 ## Limits
 
+- **Observation is opt-in and outside Pohunek only.** It needs
+  `POHUNEK_OBSERVE_EXTERNAL_AGENTS=1` in the daemon. Core lists only agents no
+  Pohunek session owns: a `cline` typed into a Pohunek shell session is a
+  descendant of that session, so it is not an external row and the data root
+  gives it no id. A development run showed such a session reading `cline` as
+  its active agent without a session id after a turn (reporter hooks were
+  uninstalled, and it is not asserted by the smoke); whether the installed
+  reporter reports an id there is unverified. Core's documentation says "a
+  foreground agent in a shell session is attributed through [the store]",
+  which this package could not reproduce for a Pohunek shell session.
+- **Two clines in one directory share the newest manifest.** The match is by
+  working directory, newest manifest wins: a `cline` that has not taken a
+  prompt yet is shown with the newest manifest of its directory, which belongs
+  to an earlier session (seen in a development run; the smoke gives the
+  observed `cline` a directory of its own).
+- **Sessions Pohunek launched with `--id <uuid>`** are found by the observer's
+  periodic pass (every 30 s), not by the order of the ids, per core's
+  contract; they are not external rows in any case.
 - **Hub routing is core's job.** Cline's default mode attaches to a running
   hub, or starts one that outlives the session (`compat/hub/`); with a hub
   running, `--id <unknown uuid>` fails with `Unknown session` and the hooks of
@@ -297,9 +404,11 @@ What the package does:
 (cd kit && cargo test --locked)   # descriptor, version, process trees, screens, rule by rule, rule-line and quoting cases
 ```
 
-`kit/` pins the core revision it is proven against (`kit/Cargo.toml`, the same
-as plugin-muse-code) and the Rust toolchain of that revision
-(`kit/rust-toolchain.toml`). Move both together with a new core release.
+`kit/` pins the core revision it is proven against (`kit/Cargo.toml`) and the
+Rust toolchain of that revision (`kit/rust-toolchain.toml`). The pin is core
+commit `4f1b8689`, which carries `transcripts-cline-session-v1` before any
+release does; it moves to the `v0.45.0` tag when core releases it. Move both
+together with a new core release.
 
 ### Detect rules against the corpus
 
@@ -406,9 +515,12 @@ user's own hooks: each appends the process chain above itself,
 nothing. They are the foreign hooks of P2-D4 and the witnesses of P2-D1 and
 P2-D2.
 
-Result, Cline 3.0.74 on Linux x86_64 against the core release v0.44.0
-(`pohunek-daemon-0.44.0-x86_64-unknown-linux-gnu`; three consecutive runs, all PASS; the stub
-served replies 0 to 9):
+Result, Cline 3.0.74 on Linux x86_64 against core commit `4f1b8689` (built
+from source, `--release`; three consecutive runs, all PASS; the stub served
+replies 0 to 10). The daemon runs with `POHUNEK_OBSERVE_EXTERNAL_AGENTS=1`;
+the P3 scenarios run last, after the reporter is uninstalled. P3-D1 and
+P3-D2 type `cline` into a `tmux` shell of the namespace, because core lists
+only agents no Pohunek session owns (see Limits):
 
 | DoD | Measured |
 |---|---|
@@ -420,6 +532,9 @@ served replies 0 to 9):
 | P2-D1 | With an isolated, compatible Cline hub running (`cline hub start` on the private port), a launch through the package reads `idle` and answers a stub turn; the hub daemon set is unchanged during and after the session; every hook of the session (the observer hooks) has the TUI's PTY root among its ancestors and `CLINE_SANDBOX=1`; no hub daemon runs below the session; `session inspect` reports `placement.outcome: clean` |
 | P2-D2 | After one stub turn the session's reference is the id the hook reported (`active_agent_session_id` and `native_session_id` equal the observer hook's `rootSessionId`, which on the first turn is also the launch id); `/clear` then a turn re-binds it to the new id, `/fork` (confirmed through `pohunek attach` with piped Enter, because input is refused while the confirmation shows) then a turn re-binds it again, each equal to the `rootSessionId` of the observer hook; a stub `spawn_agent` turn is reported as one `cline` subagent with a parent id and lifecycle `completed` |
 | P2-D3 | `pgrep -f -- --cline-hub-daemon` finds no process while the bare, turn, resumed, approval and identity sessions run and after they end (the package launches without any hub); the host's own hub set is unchanged |
+| P3-D1 | A `cline` typed into a plain shell (local-session variables, own working directory) reads as an external `cline` with no session id until its first prompt, then every row carries the id of its manifest `<id>/<id>.json` and its `cwd` (both checked against the file); no hub daemon runs |
+| P3-D2 | With the foreground `cline` observed: the captured root manifest (id and `cwd` rewritten) is attributed (control); a subagent manifest `<root>__<agent>/<root>__<agent>.json`, messages files in the root's directory (Cline's layout) and a manifest-shaped `<id>.messages.json` in a directory of its own (the case that tells a parser reading messages files), all newer, never replace it over 4 s; a readable sentinel manifest whose time lies between the control's and the candidates' is then attributed and stays so, so a candidate that were read would have outranked it |
+| P3-D3 | Profiles A and B on one config home and data root: A's launch carries `ACME_API_KEY` and not `ZENITH_API_KEY`, B the reverse; the daemon's own `OWNER_ONLY_API_KEY` reaches neither; both carry the same `CLINE_DIR` and `CLINE_SANDBOX=1`; no placeholder value in the daemon log or in `session list`/`inspect`; `providers.json` holds the stub key in plain text |
 | P2-D4 | `integration install`, `status` and `doctor` (all with `--profile cline-local`) leave the observer hooks byte-identical (sha256); the six reporter files carry the marker; `uninstall` removes the six files, keeps the `hooks/` directory and leaves the observer hooks byte-identical |
 
 Findings of the smoke run:
@@ -533,8 +648,16 @@ schedules it after `start()` has run that turn). NDJSON in
   `/undo` switches through the reporter, `/team`, an aborted turn, a
   subagent stop with outcome `failed` or `cancelled`, and the reporter's
   `hub_hosted` refusal (a hook run by a hub carries no `CLINE_SANDBOX`).
-- **Core 0.42.0 to 0.43.x.** `requires` names features of 0.38 to 0.42, which
-  those releases implement, but the kit and the smoke ran only against 0.44.0.
+- **Core before 0.45.0.** `requires` names features of 0.38 to 0.42 and
+  `transcripts-cline-session-v1`, which no release carries; the kit and the
+  smoke ran only against core commit `4f1b8689` (0.44.0 plus that feature).
+  A core without the feature refuses the descriptor with
+  `runtime_feature_unsupported` (core's contract, not driven here).
+- **Observation beyond the smoke**: a `cline` in a Pohunek shell session (see
+  Limits); how Cline uses a provider key from its environment; the daemon's
+  allowlist route for provider keys (`service.toml`); a daemon started by the
+  service manager with observation on; more than one external `cline` at once;
+  a profile of its own `CLINE_DIR` observed beside the default home.
 - **`submit_delay_ms = 500`**: the capture kit's pause between typed text and
   Enter; a shorter delay is untested.
 - **Every Cline release after 3.0.74**: accepted by the version range, never captured.
