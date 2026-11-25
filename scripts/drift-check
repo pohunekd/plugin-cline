@@ -6,7 +6,8 @@
 # Compared, per scenario:
 #   screens  the redacted screen text at every width
 #   hooks    the shape of each hook payload (key paths and value types, never
-#            values), the event sequence and the env names
+#            values), the events and their counts (not their order) and the
+#            env names
 #   process  the process trees, and the number of `--cline-hub-daemon`
 #            processes in every tree and every after-session listing
 #   help     the --help text of every command (flags the launch shape uses)
@@ -370,10 +371,23 @@ self_test() {
   sed 's/Approve/Allow/' "$COMMITTED/$screen" >"$work/fresh/$screen"
   jq 'del(.payload.timestamp)' "$COMMITTED/$hook" >"$work/fresh/$hook"
   printf '.cline: x --cline-hub-daemon --port 1\n' >>"$work/fresh/$tree"
+  # The fresh copy is a capture of a newer release: every release string moves
+  # up one (the recorded release becomes the older hub release), so the
+  # release placeholders must match on both sides for the count below to hold.
+  local old_rel old_hub_rel new_rel=9.9.9
+  old_rel="$(release_field "$COMMITTED" release)"
+  old_hub_rel="$(release_field "$COMMITTED" old_release)"
+  [[ -n "$old_rel" ]] || die "self test: the committed evidence names no release"
+  # shellcheck disable=SC2016 # $ENV and $m are perl variables
+  find "$work/fresh" -type f -print0 |
+    OLD="$old_rel" OLDER="$old_hub_rel" NEW="$new_rel" xargs -0 perl -pi -e '
+      BEGIN { %m = ($ENV{OLD} => $ENV{NEW}); $m{$ENV{OLDER}} = $ENV{OLD} if length $ENV{OLDER};
+              $re = join "|", map { quotemeta } keys %m }
+      s/($re)/$m{$1}/g'
   rc=0
   "$SCRIPT_DIR/drift-check" --committed "$COMMITTED" --fresh "$work/fresh" --report "$report" || rc=$?
   ((rc == 1)) || die "self test: the changed copy did not report a difference (rc $rc)"
-  grep -qxF "<!-- drift-release: $(release_field "$COMMITTED" release) -->" "$report" || die "self test: the report names no release"
+  grep -qxF "<!-- drift-release: $new_rel -->" "$report" || die "self test: the report names no release"
   screen="${screen#screens/}"
   grep -qxF "screens ${screen%.txt}" "$report" || die "self test: the changed screen is not reported"
   hook="${hook#hooks/}"

@@ -17,6 +17,9 @@ LABEL_COLOR="D93F0B"
 LABEL_DESCRIPTION="A scheduled capture of the newest Cline release differs from compat/"
 # GitHub rejects an issue body above 65536 characters.
 MAX_BODY_CHARS=60000
+# Read-back of a created issue: attempts and seconds between them.
+READBACK_ATTEMPTS=24
+READBACK_DELAY=5
 
 usage() {
   cat <<'EOF'
@@ -111,7 +114,7 @@ self_test() {
 main() {
   REPO=""
   REPORT=""
-  local dry=0 body_only=0 found number marker release count tmp
+  local dry=0 body_only=0 found number marker release count attempt tmp
   while (($# > 0)); do
     case "$1" in
       --body-only)
@@ -162,7 +165,8 @@ main() {
   found="$(open_issues)"
   count="$(grep -c . <<<"$found" || true)"
   tmp="$(mktemp "${TMPDIR:-/tmp}/drift-issue.XXXXXX")"
-  trap 'rm -f "$tmp"' EXIT
+  BODY_FILE="$tmp"
+  trap 'rm -f "$BODY_FILE"' EXIT
   body >"$tmp"
   if ((dry == 1)); then
     cat "$tmp"
@@ -175,8 +179,15 @@ main() {
     fi
     gh label create "$LABEL" --repo "$REPO" --color "$LABEL_COLOR" --description "$LABEL_DESCRIPTION" --force >/dev/null
     gh issue create --repo "$REPO" --title "$TITLE" --label "$LABEL" --body-file "$tmp" >/dev/null
-    # The effect is read back: exactly one open issue carries the label.
-    count="$(open_issues | grep -c . || true)"
+    # The effect is read back: exactly one open issue carries the label. The
+    # label listing lags a few seconds behind a new issue, and a run that ends
+    # before the issue is listed would let the next run create a second one,
+    # so this waits until it shows.
+    for ((attempt = 1; attempt <= READBACK_ATTEMPTS; attempt++)); do
+      count="$(open_issues | grep -c . || true)"
+      ((count >= 1)) && break
+      sleep "$READBACK_DELAY"
+    done
     ((count == 1)) || die "expected one open $LABEL issue after creating it, found $count"
     log "created the drift issue for $release"
     exit 0

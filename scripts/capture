@@ -2037,12 +2037,15 @@ main() {
     stub_stop
     pty_stop
     assert_no_hub "step $arg"
+    # The miss list is written first so the scan covers it too.
+    if ((${#MISSES[@]} > 0)); then
+      printf '%s\n' "${MISSES[@]}" >"$stage/MISSED.txt"
+    fi
     scan_evidence "$stage"
     OUT="$OUT_FINAL"
     if ((${#MISSES[@]} > 0)); then
       # A step that missed an expectation leaves compat/ as it was; its
       # staged files stay below the root for inspection.
-      printf '%s\n' "${MISSES[@]}" >"$stage/MISSED.txt"
       log "step $arg: ${#MISSES[@]} expectation(s) missed; compat/ keeps the previous evidence (see ${stage}/MISSED.txt)"
       failed+=("$arg")
       continue

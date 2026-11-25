@@ -61,6 +61,7 @@ jobs:
           echo "release=$release" >>"$GITHUB_OUTPUT"
           echo "Capturing Cline $release"
       - name: Capture
+        id: capture
         env:
           RELEASE: ${{ steps.release.outputs.release }}
         run: |
@@ -68,6 +69,7 @@ jobs:
           scripts/capture --root "$RUNNER_TEMP/capture" --out "$RUNNER_TEMP/fresh" --release "$RELEASE" all 2>&1 | tee "$RUNNER_TEMP/capture.log"
           rc=${PIPESTATUS[0]}
           set -e
+          echo "rc=$rc" >>"$GITHUB_OUTPUT"
           # Exit status 3 means missed expectations, which is drift; any other
           # failure (install, integrity, isolation, hub check) is a broken run
           # and fails the job.
@@ -102,8 +104,6 @@ jobs:
             *) exit "$rc" ;;
           esac
       - name: Upload the report and the fresh evidence
-        # Also after a failed run: the staged files of a missed step are the
-        # evidence for the difference.
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -111,7 +111,15 @@ jobs:
           path: |
             ${{ runner.temp }}/out/report.md
             ${{ runner.temp }}/fresh
-            ${{ runner.temp }}/capture/stage
+          retention-days: 30
+      - name: Upload the staged files of the missed steps
+        # Only after a run the scan accepted (rc 0 or 3): a run that refused
+        # its evidence as host-specific publishes none of it.
+        if: always() && (steps.capture.outputs.rc == '0' || steps.capture.outputs.rc == '3')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: drift-stage
+          path: ${{ runner.temp }}/capture/stage
           retention-days: 30
 
   issue:
