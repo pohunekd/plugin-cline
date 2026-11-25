@@ -2013,6 +2013,9 @@ main() {
       bash "$SCRIPT_DIR/capture" --root /run/capture-root --out "$OUT" --release "$RELEASE" \
       ${OLD_RELEASE:+--old-release "$OLD_RELEASE"} "${steps[@]}"
   fi
+  # A command that fails under `set -e` is named in the log (line, command, status).
+  set -E
+  trap 'rc=$?; printf "capture: line %s: %s failed (rc %s)\n" "$LINENO" "$BASH_COMMAND" "$rc" >&2' ERR
   mkdir -p "$ROOT/tmux"
   export TMUX_TMPDIR="$ROOT/tmux"
   assert_isolated
