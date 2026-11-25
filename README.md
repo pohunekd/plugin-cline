@@ -266,7 +266,7 @@ Cline does with a provider variable (which names it reads, whether it prefers
 them to `providers.json`) is not captured here (unverified, the smoke
 configures its stub provider through `cline auth`).
 
-Two ways to get a provider key into a launch, with synthetic names:
+Three ways to get a provider key into a launch, with synthetic names:
 
 ```toml
 # ~/.config/pohunek/agents/cline-acme.toml
@@ -291,6 +291,10 @@ ZENITH_API_KEY = "<provider key>"
   documented contract and is not driven here: the smoke's dev daemon has a
   fixed default allowlist, and the smoke shows only that a variable in the
   daemon's environment outside it reaches no agent.
+- **A profile `secret_env` slot** keeps the value out of the profile file.
+  Limits (unverified, not driven here): a session resumed without the slot
+  filled fails with `secret_env_missing`, and the `pohunek` CLI cannot fill a
+  slot, so the value has to come from another client.
 
 No value of a key belongs in `package/`, a fixture or this README, and the
 smoke checks that its placeholder values appear neither in the daemon log nor
@@ -314,12 +318,14 @@ config home, does not follow it: its sessions are not attributed. Set
   `POHUNEK_OBSERVE_EXTERNAL_AGENTS=1` in the daemon. Core lists only agents no
   Pohunek session owns: a `cline` typed into a Pohunek shell session is a
   descendant of that session, so it is not an external row and the data root
-  gives it no id. A development run showed such a session reading `cline` as
-  its active agent without a session id after a turn (reporter hooks were
-  uninstalled, and it is not asserted by the smoke); whether the installed
-  reporter reports an id there is unverified. Core's documentation says "a
-  foreground agent in a shell session is attributed through [the store]",
-  which this package could not reproduce for a Pohunek shell session.
+  gives it no id. Such a session shows `cline` as its active agent without a
+  native session id; that is core's design, and its documentation, which says
+  "a foreground agent in a shell session is attributed through [the store]",
+  is being corrected (zajca/pohunek#2531). A development run showed this
+  after a turn (reporter hooks were uninstalled, and it is not asserted by
+  the smoke); whether the installed reporter reports an id there is
+  unverified. The DoD for D1 is therefore re-scoped to a `cline` outside any
+  Pohunek session ([#5 comment](https://github.com/pohunekd/plugin-cline/issues/5#issuecomment-7177126020)).
 - **Two clines in one directory share the newest manifest.** The match is by
   working directory, newest manifest wins: a `cline` that has not taken a
   prompt yet is shown with the newest manifest of its directory, which belongs
@@ -532,7 +538,7 @@ only agents no Pohunek session owns (see Limits):
 | P2-D1 | With an isolated, compatible Cline hub running (`cline hub start` on the private port), a launch through the package reads `idle` and answers a stub turn; the hub daemon set is unchanged during and after the session; every hook of the session (the observer hooks) has the TUI's PTY root among its ancestors and `CLINE_SANDBOX=1`; no hub daemon runs below the session; `session inspect` reports `placement.outcome: clean` |
 | P2-D2 | After one stub turn the session's reference is the id the hook reported (`active_agent_session_id` and `native_session_id` equal the observer hook's `rootSessionId`, which on the first turn is also the launch id); `/clear` then a turn re-binds it to the new id, `/fork` (confirmed through `pohunek attach` with piped Enter, because input is refused while the confirmation shows) then a turn re-binds it again, each equal to the `rootSessionId` of the observer hook; a stub `spawn_agent` turn is reported as one `cline` subagent with a parent id and lifecycle `completed` |
 | P2-D3 | `pgrep -f -- --cline-hub-daemon` finds no process while the bare, turn, resumed, approval and identity sessions run and after they end (the package launches without any hub); the host's own hub set is unchanged |
-| P3-D1 | A `cline` typed into a plain shell (local-session variables, own working directory) reads as an external `cline` with no session id until its first prompt, then every row carries the id of its manifest `<id>/<id>.json` and its `cwd` (both checked against the file); no hub daemon runs |
+| P3-D1 (re-scoped to outside any Pohunek session, see [#5 comment](https://github.com/pohunekd/plugin-cline/issues/5#issuecomment-7177126020)) | A `cline` typed into a plain shell (local-session variables, own working directory) reads as an external `cline` with no session id until its first prompt, then every row carries the id of its manifest `<id>/<id>.json` and its `cwd` (both checked against the file); no hub daemon runs |
 | P3-D2 | With the foreground `cline` observed: the captured root manifest (id and `cwd` rewritten) is attributed (control); a subagent manifest `<root>__<agent>/<root>__<agent>.json`, messages files in the root's directory (Cline's layout) and a manifest-shaped `<id>.messages.json` in a directory of its own (the case that tells a parser reading messages files), all newer, never replace it over 4 s; a readable sentinel manifest whose time lies between the control's and the candidates' is then attributed and stays so, so a candidate that were read would have outranked it |
 | P3-D3 | Profiles A and B on one config home and data root: A's launch carries `ACME_API_KEY` and not `ZENITH_API_KEY`, B the reverse; the daemon's own `OWNER_ONLY_API_KEY` reaches neither; both carry the same `CLINE_DIR` and `CLINE_SANDBOX=1`; no placeholder value in the daemon log or in `session list`/`inspect`; `providers.json` holds the stub key in plain text |
 | P2-D4 | `integration install`, `status` and `doctor` (all with `--profile cline-local`) leave the observer hooks byte-identical (sha256); the six reporter files carry the marker; `uninstall` removes the six files, keeps the `hooks/` directory and leaves the observer hooks byte-identical |

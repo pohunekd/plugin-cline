@@ -5,9 +5,10 @@
 # attaches to a running Cline hub, or starts one that outlives the session,
 # compat/hub/) and installs the reporter hooks that follow the session
 # identity and its subagents. `transcripts-cline-session-v1` makes a foreground
-# `cline` in a shell session attributable through its session store. The
-# minimum core is 0.45.0, the first release with that feature; the kit
-# (kit/Cargo.toml) and the smoke run against the core revision that carries it.
+# `cline` started outside any Pohunek session attributable through its session
+# store. The minimum core is 0.45.0, the first release with that feature; the
+# kit (kit/Cargo.toml) and the smoke run against the core revision that
+# carries it.
 
 schema = 1
 id = "pohunek.runtime.cline"
@@ -114,8 +115,8 @@ relocating_args = ["--data-dir", "--config"]
 env = "CLINE_DIR"
 default = ".cline"
 
-# Observation of a `cline` started outside Pohunek (a shell session's
-# foreground): core reads the session manifest `<id>/<id>.json` below
+# Observation of a `cline` started outside any Pohunek session (a Pohunek
+# shell session's descendants are not matched): core reads the session manifest `<id>/<id>.json` below
 # `data/sessions` of the config home. A subagent id (`__`) and the
 # `*.messages.json` files are not sessions. A profile that sets only
 # `CLINE_DATA_DIR` moves the store out of reach of `[config_home]` and is not
