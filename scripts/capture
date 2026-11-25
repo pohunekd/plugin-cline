@@ -2027,6 +2027,14 @@ main() {
   printf '#!/bin/bash\nprintf "%%s\\n" "$*" >>%q\n' "$ROOT/kit/opened.log" >"$ROOT/kit/bin/xdg-open"
   chmod +x "$ROOT/kit/bin/xdg-open"
   : >"$ROOT/kit/opened.log"
+  # The CLI wrapper is a node script and every run uses PATH=kit/bin:...:/usr/bin:/bin;
+  # a node outside those two directories (a toolcache install) is linked into kit/bin.
+  local node_bin
+  node_bin="$(command -v node)"
+  case "$node_bin" in
+    /usr/bin/node | /bin/node) ;;
+    *) ln -sf "$node_bin" "$ROOT/kit/bin/node" ;;
+  esac
   local stage failed=()
   for arg in "${steps[@]}"; do
     log "step: $arg"
