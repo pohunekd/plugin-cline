@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# Opens or updates the one open drift issue from a scripts/drift-check report.
+#
+# The issue is found by its label, not by a search, so a rerun right after a
+# run sees it. An open issue is updated in place (its body becomes the latest
+# report) and gets a comment when the release changed; otherwise one issue is
+# created. Nothing in the repository is edited.
+#
+# Requires: gh (authenticated, with issues write on the repository), jq.
+set -euo pipefail
+
+TITLE="Cline drift: the newest release differs from the committed evidence"
+LABEL="cline-drift"
+LABEL_COLOR="D93F0B"
+LABEL_DESCRIPTION="A scheduled capture of the newest Cline release differs from compat/"
+# GitHub rejects an issue body above 65536 characters.
+MAX_BODY_CHARS=60000
+
+usage() {
+  cat <<'EOF'
+usage: scripts/drift-issue --repo OWNER/REPO --report FILE [--dry-run]
+
+  --repo OWNER/REPO  the repository that holds the issue
+  --report FILE      the report written by scripts/drift-check
+  --dry-run          look up the open issue and print what would happen
+EOF
+}
+
+die() {
+  printf 'drift-issue: %s\n' "$*" >&2
+  exit 1
+}
+
+log() {
+  printf 'drift-issue: %s\n' "$*" >&2
+}
+
+# open_issues: the open issues that carry the label, oldest first, as
+# `number TAB release-marker` lines.
+open_issues() {
+  gh issue list --repo "$REPO" --label "$LABEL" --state open --limit 100 --json number,body |
+    jq -r 'sort_by(.number)[] | "\(.number)\t\(((.body | capture("<!-- drift-release: (?<r>[0-9.]+) -->")?) // {r: ""}).r)"'
+}
+
+# body: the issue body for the report.
+body() {
+  local run=""
+  if [[ -n "${GITHUB_SERVER_URL:-}" && -n "${GITHUB_REPOSITORY:-}" && -n "${GITHUB_RUN_ID:-}" ]]; then
+    run="Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"$'\n\n'
+  fi
+  {
+    head -c "$MAX_BODY_CHARS" "$REPORT"
+    printf '\n\n%s' "$run"
+    # shellcheck disable=SC2016 # the backticks are markdown, not a substitution
+    printf 'The scheduled capture compared a fresh `scripts/capture` run with `compat/`. It edits nothing: review the differences, then follow "Updating to a new Cline release" in the README (capture, review, commit the evidence, move the lock).\n'
+  }
+}
+
+main() {
+  REPO=""
+  REPORT=""
+  local dry=0 found number marker release count tmp
+  while (($# > 0)); do
+    case "$1" in
+      --repo | --report)
+        (($# > 1)) || die "$1 needs a value"
+        case "$1" in
+          --repo) REPO="$2" ;;
+          --report) REPORT="$2" ;;
+        esac
+        shift 2
+        ;;
+      --dry-run)
+        dry=1
+        shift
+        ;;
+      -h | --help)
+        usage
+        exit 0
+        ;;
+      *) die "unknown argument: $1" ;;
+    esac
+  done
+  [[ "$REPO" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || die "--repo OWNER/REPO is required"
+  [[ -f "$REPORT" ]] || die "--report FILE is required and must exist"
+  command -v gh >/dev/null 2>&1 || die "missing tool: gh"
+  command -v jq >/dev/null 2>&1 || die "missing tool: jq"
+  release="$(sed -n 's/^<!-- drift-release: \([0-9.]*\) -->$/\1/p' "$REPORT" | head -n 1)"
+  [[ -n "$release" ]] || die "the report has no drift-release marker"
+  grep -q 'differs from the committed evidence' "$REPORT" || {
+    log "the report records no difference; nothing to do"
+    exit 0
+  }
+
+  found="$(open_issues)"
+  count="$(grep -c . <<<"$found" || true)"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/drift-issue.XXXXXX")"
+  trap 'rm -f "$tmp"' EXIT
+  body >"$tmp"
+
+  if ((count == 0)); then
+    if ((dry == 1)); then
+      log "dry run: would create an issue \"$TITLE\" for $release"
+      exit 0
+    fi
+    gh label create "$LABEL" --repo "$REPO" --color "$LABEL_COLOR" --description "$LABEL_DESCRIPTION" --force >/dev/null
+    gh issue create --repo "$REPO" --title "$TITLE" --label "$LABEL" --body-file "$tmp" >/dev/null
+    # The effect is read back: exactly one open issue carries the label.
+    count="$(open_issues | grep -c . || true)"
+    ((count == 1)) || die "expected one open $LABEL issue after creating it, found $count"
+    log "created the drift issue for $release"
+    exit 0
+  fi
+
+  IFS=$'\t' read -r number marker <<<"$(head -n 1 <<<"$found")"
+  ((count == 1)) || log "warning: $count open $LABEL issues; updating the oldest (#$number)"
+  if ((dry == 1)); then
+    log "dry run: would update #$number (recorded release ${marker:-unknown}) for $release"
+    exit 0
+  fi
+  gh issue edit "$number" --repo "$REPO" --body-file "$tmp" >/dev/null
+  if [[ "$marker" != "$release" ]]; then
+    gh issue comment "$number" --repo "$REPO" --body "The newest release is now $release (the issue was last updated for ${marker:-an unknown release}); the description holds the latest comparison." >/dev/null
+  fi
+  log "updated #$number for $release"
+}
+
+main "$@"

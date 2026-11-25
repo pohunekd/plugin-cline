@@ -1,0 +1,125 @@
+name: Drift
+
+# Weekly capture of the newest Cline release against the loopback model stub,
+# compared with the committed evidence in compat/. A difference opens or
+# updates the one drift issue; compat/ and the version lock are never edited.
+# No secret and no model: the capture runs in a namespace with only a loopback
+# interface, and the only network use is the npm registry fetch of the release.
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Release X.Y.Z to capture instead of the newest one"
+        required: false
+        type: string
+
+# Runs never overlap, so two runs cannot both create the issue.
+concurrency:
+  group: drift
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    # Runs the downloaded Cline binary, so it holds a read-only token and
+    # hands the result to the issue job as an artifact.
+    name: capture
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    outputs:
+      drift: ${{ steps.check.outputs.drift }}
+      release: ${{ steps.release.outputs.release }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Tools
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends tmux jq sqlite3
+      - name: Allow unprivileged user namespaces
+        # The runner image restricts them with AppArmor; the capture isolates
+        # Cline in user, network, mount, UTS and PID namespaces.
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Release
+        id: release
+        env:
+          REQUESTED: ${{ inputs.release }}
+        run: |
+          release="$REQUESTED"
+          if [[ -z "$release" ]]; then
+            release="$(curl -fsS --proto '=https' https://registry.npmjs.org/cline/latest | jq -er .version)"
+          fi
+          if [[ ! "$release" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "not a release: $release" >&2
+            exit 1
+          fi
+          echo "release=$release" >>"$GITHUB_OUTPUT"
+          echo "Capturing Cline $release"
+      - name: Capture
+        env:
+          RELEASE: ${{ steps.release.outputs.release }}
+        run: |
+          set +e
+          scripts/capture --root "$RUNNER_TEMP/capture" --out "$RUNNER_TEMP/fresh" --release "$RELEASE" all 2>&1 | tee "$RUNNER_TEMP/capture.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          # Missed expectations are drift; any other failure (install,
+          # integrity, isolation) is a broken run and fails the job.
+          if ((rc != 0)) && ! grep -q '^capture: steps with missed expectations:' "$RUNNER_TEMP/capture.log"; then
+            echo "the capture failed without a missed expectation" >&2
+            exit 1
+          fi
+      - name: Toolchain
+        # The channel in kit/rust-toolchain.toml is the pin of the core rev.
+        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' kit/rust-toolchain.toml)" --profile minimal
+      - name: Compare
+        id: check
+        env:
+          RELEASE: ${{ steps.release.outputs.release }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          rc=0
+          scripts/drift-check --fresh "$RUNNER_TEMP/fresh" --stage "$RUNNER_TEMP/capture/stage" \
+            --release "$RELEASE" --detect --report "$RUNNER_TEMP/out/report.md" || rc=$?
+          cat "$RUNNER_TEMP/out/report.md" >>"$GITHUB_STEP_SUMMARY"
+          case "$rc" in
+            0) echo "drift=false" >>"$GITHUB_OUTPUT" ;;
+            1) echo "drift=true" >>"$GITHUB_OUTPUT" ;;
+            *) exit "$rc" ;;
+          esac
+      - name: Upload the report and the fresh evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: drift
+          path: |
+            ${{ runner.temp }}/out/report.md
+            ${{ runner.temp }}/fresh
+          retention-days: 30
+
+  issue:
+    # The only job with a write permission; it runs repository scripts on the
+    # report and never executes anything the capture downloaded.
+    name: issue
+    needs: capture
+    if: needs.capture.outputs.drift == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: drift
+          path: ${{ runner.temp }}/drift
+      - name: Open or update the drift issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/drift-issue --repo "$GITHUB_REPOSITORY" --report "$RUNNER_TEMP/drift/out/report.md"

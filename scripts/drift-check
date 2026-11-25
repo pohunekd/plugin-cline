@@ -1,0 +1,436 @@
+#!/usr/bin/env bash
+# Drift check: compares a fresh scripts/capture output with the committed
+# evidence in compat/ and writes a report of every difference. It never edits
+# either side.
+#
+# Compared, per scenario:
+#   screens  the redacted screen text at every width
+#   hooks    the shape of each hook payload (key paths and value types, never
+#            values), the event sequence and the env names
+#   process  the process trees, and the number of `--cline-hub-daemon`
+#            processes in every tree and every after-session listing
+#   help     the --help text of every command (flags the launch shape uses)
+#   capture  expectations the capture run itself missed (MISSED.txt)
+#   detect   the committed detect rules against the fresh screens (optional)
+#
+# Exit status: 0 no difference, 1 differences (report written), 2 usage or
+# tool error.
+#
+# Requires: bash 4+, jq, perl, diff; cargo for --detect.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+
+COMMITTED="$REPO_DIR/compat"
+FRESH=""
+STAGE=""
+REPORT=""
+RELEASE=""
+DETECT=0
+SELF_TEST=0
+OLD_REL=""
+NEW_REL=""
+# The older hub release each side records beside its release.
+OLD_HUB_REL=""
+NEW_HUB_REL=""
+# Scratch directories removed on exit.
+TMP_DIRS=()
+# Most lines of one difference shown in the report, and of the kit's output.
+MAX_DIFF_LINES=12
+MAX_DETECT_LINES=40
+# Screen scenarios whose text differs on every run.
+VOLATILE_SCREENS=(signin-chatgpt signin-chatgpt-after)
+# Process trees and listings checked for hub daemons, relative to compat/.
+PROCESS_GLOBS=(install/process-*.txt hub/*.txt)
+
+usage() {
+  cat <<'EOF'
+usage: scripts/drift-check --fresh DIR [--committed DIR] [--release X.Y.Z]
+                           [--stage DIR] [--report FILE] [--detect]
+
+  --fresh DIR      the --out directory of a scripts/capture run
+  --committed DIR  the baseline evidence (default: compat/)
+  --release X.Y.Z  the captured release (default: release in DIR/RELEASE)
+  --stage DIR      <capture root>/stage; lists the steps that missed an
+                   expectation
+  --report FILE    where the markdown report goes (default: stdout)
+  --self-test      check this script against fixtures made from the committed
+                   evidence (an unchanged copy, then intentional changes)
+  --detect         also run the kit's detect-check (cargo test) against the
+                   fresh screens in a copy of kit/, package/ and compat/
+EOF
+}
+
+die() {
+  printf 'drift-check: %s\n' "$*" >&2
+  exit 2
+}
+
+# FINDINGS rows: category TAB scenario TAB detail (the detail carries line
+# breaks as the two characters \n).
+FINDINGS=()
+
+finding() {
+  FINDINGS+=("$1"$'\t'"$2"$'\t'"$3")
+}
+
+# release_field <dir> <key>: a value of <dir>/RELEASE (key=value lines).
+release_field() {
+  [[ -f "$1/RELEASE" ]] || return 0
+  awk -F= -v k="$2" '$1 == k { print $2; exit }' "$1/RELEASE"
+}
+
+cleanup() {
+  local dir
+  for dir in "${TMP_DIRS[@]}"; do
+    rm -rf -- "$dir"
+  done
+}
+trap cleanup EXIT
+
+# scratch_dir <prefix>: a new directory removed on exit.
+scratch_dir() {
+  local dir
+  dir="$(mktemp -d "${TMPDIR:-/tmp}/$1.XXXXXX")"
+  TMP_DIRS+=("$dir")
+  printf '%s\n' "$dir"
+}
+
+# norm <release> <older release>: stdin with the two releases replaced by
+# placeholders, every braille spinner frame by one fixed glyph and the session
+# duration by a marker, so an installed version, a spinner phase or the run
+# time is not a difference.
+norm() {
+  perl -CSD -e '
+    my ($release, $older) = @ARGV;
+    while (my $line = <STDIN>) {
+      $line =~ s/[\x{2800}-\x{28FF}]/\x{283F}/g;
+      $line =~ s/^(\s*Duration\s+)\d+\w*/$1<duration>/;
+      $line =~ s/\Q$release\E/<release>/g if length $release;
+      $line =~ s/\Q$older\E/<older release>/g if length $older;
+      print $line;
+    }
+  ' -- "$1" "$2"
+}
+
+norm_committed() { norm "$OLD_REL" "$OLD_HUB_REL"; }
+norm_fresh() { norm "$NEW_REL" "$NEW_HUB_REL"; }
+
+# delta <file> <file>: the differing lines of two files as `-old` and `+new`,
+# joined by a literal \n and cut at MAX_DIFF_LINES; empty when they are equal.
+delta() {
+  diff "$1" "$2" | grep -E '^[<>]' | head -n "$MAX_DIFF_LINES" | sed 's/^</-/; s/^>/+/' |
+    paste -sd'\r' | sed 's/\r/\\n/g' || true
+}
+
+# text_drift <area> <scenario> <committed file> <fresh file>: records a
+# difference between two normalised text files.
+text_drift() {
+  local area="$1" scn="$2" old="$3" new="$4" diffs
+  if [[ ! -e "$new" ]]; then
+    finding "$area" "$scn" "missing in the fresh capture"
+    return 0
+  fi
+  diffs="$(delta <(norm_committed <"$old") <(norm_fresh <"$new"))"
+  [[ -z "$diffs" ]] || finding "$area" "$scn" "$diffs"
+}
+
+# shape <json file>: sorted key paths with value types (array positions
+# collapsed) and the env names as values.
+shape() {
+  jq -r '
+    ([paths(scalars) as $p
+      | ($p | map(if type == "number" then "[]" else . end) | join(".")) + ":" + (getpath($p) | type)]
+     + [(.env_names // [])[] | "env_names=" + .]) | unique[]' "$1"
+}
+
+compare_screens() {
+  local dir scn file name
+  [[ -d "$COMMITTED/screens" ]] || return 0
+  for dir in "$COMMITTED"/screens/*/; do
+    [[ -d "$dir" ]] || continue
+    scn="$(basename "$dir")"
+    # The sign-in URL carries a fresh PKCE challenge and state on every run;
+    # the detect rules still read these screens (--detect).
+    [[ " ${VOLATILE_SCREENS[*]} " != *" $scn "* ]] || continue
+    for file in "$dir"*.txt; do
+      [[ -e "$file" ]] || continue
+      name="$(basename "$file")"
+      if [[ ! -e "$FRESH/screens/$scn/$name" && -e "$FRESH/screens/$scn/${name%.txt}.unmatched.txt" ]]; then
+        # The state was not reached; the screen that showed instead is the difference.
+        text_drift screens "$scn/${name%.txt}" "$file" "$FRESH/screens/$scn/${name%.txt}.unmatched.txt"
+      else
+        text_drift screens "$scn/${name%.txt}" "$file" "$FRESH/screens/$scn/$name"
+      fi
+    done
+  done
+  for dir in "$FRESH"/screens/*/; do
+    [[ -d "$dir" ]] || continue
+    scn="$(basename "$dir")"
+    [[ -d "$COMMITTED/screens/$scn" ]] || finding screens "$scn" "new scenario, not in the committed evidence"
+    for file in "$dir"*.txt; do
+      [[ -e "$file" ]] || continue
+      name="$(basename "$file")"
+      if [[ "$name" == *.unmatched.txt ]]; then
+        [[ -e "$COMMITTED/screens/$scn/${name%.unmatched.txt}.txt" ]] ||
+          finding screens "$scn/${name%.unmatched.txt}" "a state not in the committed evidence was not reached"
+      elif [[ -d "$COMMITTED/screens/$scn" && ! -e "$COMMITTED/screens/$scn/$name" ]]; then
+        finding screens "$scn/${name%.txt}" "new width, not in the committed evidence"
+      fi
+    done
+  done
+}
+
+# hook_events <scenario dir>: the event and hook name of every payload, sorted.
+hook_events() {
+  { cut -f2-3 "$1/SUMMARY.tsv" 2>/dev/null || true; } | sort
+}
+
+# hook_shapes <scenario dir>: the shapes of all payloads, each prefixed with
+# its event, as one sorted set.
+hook_shapes() {
+  local file
+  for file in "$1"/*.json; do
+    [[ -e "$file" ]] || continue
+    shape "$file" | sed "s/^/$(jq -r .event "$file") /"
+  done | sort -u
+}
+
+compare_hooks() {
+  local dir scn diffs
+  [[ -d "$COMMITTED/hooks" ]] || return 0
+  for dir in "$COMMITTED"/hooks/*/; do
+    [[ -d "$dir" ]] || continue
+    scn="$(basename "$dir")"
+    if [[ ! -d "$FRESH/hooks/$scn" ]]; then
+      finding hooks "$scn" "missing in the fresh capture"
+      continue
+    fi
+    # Hooks of concurrent agents arrive in either order, so the events (with
+    # their counts) and the shapes are compared as sorted sets per scenario.
+    diffs="$(delta <(hook_events "$dir") <(hook_events "$FRESH/hooks/$scn"))"
+    [[ -z "$diffs" ]] || finding hooks "$scn" "events: $diffs"
+    diffs="$(delta <(hook_shapes "$dir") <(hook_shapes "$FRESH/hooks/$scn"))"
+    [[ -z "$diffs" ]] || finding hooks "$scn" "payload shapes: $diffs"
+  done
+  for dir in "$FRESH"/hooks/*/; do
+    [[ -d "$dir" ]] || continue
+    scn="$(basename "$dir")"
+    [[ -d "$COMMITTED/hooks/$scn" ]] || finding hooks "$scn" "new scenario, not in the committed evidence"
+  done
+}
+
+# hub_daemon_lines <file>: the number of hub daemon lines in a listing.
+hub_daemon_lines() {
+  grep -c -e '--cline-hub-daemon' "$1" || true
+}
+
+compare_process() {
+  local rel old new
+  while IFS= read -r rel; do
+    if [[ ! -f "$FRESH/$rel" ]]; then
+      finding process "$rel" "missing in the fresh capture"
+      continue
+    fi
+    old="$(hub_daemon_lines "$COMMITTED/$rel")"
+    new="$(hub_daemon_lines "$FRESH/$rel")"
+    if [[ "$old" != "$new" ]]; then
+      finding process "$rel" "hub daemon lines (--cline-hub-daemon): $old committed, $new fresh"
+    else
+      text_drift process "$rel" "$COMMITTED/$rel" "$FRESH/$rel"
+    fi
+  done < <(cd "$COMMITTED" && for g in "${PROCESS_GLOBS[@]}"; do compgen -G "$g" || true; done | sort -u)
+}
+
+compare_help() {
+  local file name
+  [[ -d "$COMMITTED/help" ]] || return 0
+  for file in "$COMMITTED"/help/*.txt; do
+    name="$(basename "$file")"
+    text_drift help "${name%.txt}" "$file" "$FRESH/help/$name"
+  done
+  for file in "$FRESH"/help/*.txt; do
+    [[ -e "$file" ]] || continue
+    name="$(basename "$file")"
+    [[ -e "$COMMITTED/help/$name" ]] || finding help "${name%.txt}" "new command, not in the committed evidence"
+  done
+}
+
+# overlay_stage: a step that missed an expectation leaves its files below the
+# stage directory only (the screens that showed instead among them). FRESH
+# becomes a copy with those files laid over it, so they are compared.
+overlay_stage() {
+  local missed view
+  [[ -n "$STAGE" && -d "$STAGE" ]] || return 0
+  view=""
+  for missed in "$STAGE"/*/MISSED.txt; do
+    [[ -e "$missed" ]] || continue
+    if [[ -z "$view" ]]; then
+      view="$(scratch_dir drift-fresh)"
+      cp -a "$FRESH/." "$view/"
+    fi
+    cp -a "$(dirname "$missed")/." "$view/"
+    rm -f "$view/MISSED.txt"
+  done
+  [[ -z "$view" ]] || FRESH="$view"
+}
+
+compare_stage() {
+  local missed step
+  [[ -n "$STAGE" && -d "$STAGE" ]] || return 0
+  for missed in "$STAGE"/*/MISSED.txt; do
+    [[ -e "$missed" ]] || continue
+    step="$(basename "$(dirname "$missed")")"
+    finding capture "$step" "$(head -n "$MAX_DIFF_LINES" "$missed" | paste -sd'\r' | sed 's/\r/\\n/g')"
+  done
+}
+
+# run_detect: the kit's tests read package/ and compat/ relative to the crate,
+# so a copy of kit/, package/ and compat/ with the fresh evidence laid over it
+# stands in for the repository.
+run_detect() {
+  local work out rc=0
+  command -v cargo >/dev/null 2>&1 || die "--detect needs cargo"
+  work="$(scratch_dir drift-detect)"
+  mkdir -p "$work/kit"
+  cp -a "$REPO_DIR/kit/." "$work/kit/"
+  rm -rf "$work/kit/target"
+  cp -a "$REPO_DIR/package" "$work/package"
+  cp -a "$COMMITTED" "$work/compat"
+  [[ ! -d "$FRESH/screens" ]] || rm -rf "$work/compat/screens"
+  cp -a "$FRESH/." "$work/compat/"
+  out="$work/detect.log"
+  (cd "$work/kit" && CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$work/target}" cargo test --locked) >"$out" 2>&1 || rc=$?
+  if ((rc != 0)); then
+    finding detect "kit/tests/package.rs" "cargo test failed (rc $rc) against the fresh screens:\\n$(grep -E 'FAILED|panicked|failed:|screens:|^  ' "$out" | head -n "$MAX_DETECT_LINES" | paste -sd'\r' | sed 's/\r/\\n/g')"
+  fi
+}
+
+# write_report: markdown; the first line is a marker the issue step reads, every
+# difference is one table row.
+write_report() {
+  local row area scn detail count="${#FINDINGS[@]}"
+  printf '<!-- drift-release: %s -->\n' "$NEW_REL"
+  if ((count == 0)); then
+    printf 'Cline %s: no difference from the committed evidence (release %s).\n' "$NEW_REL" "$OLD_REL"
+    return 0
+  fi
+  printf 'Cline **%s** differs from the committed evidence (release %s) in %s place(s).\n\n' \
+    "$NEW_REL" "$OLD_REL" "$count"
+  printf '| Area | Scenario | Difference |\n|---|---|---|\n'
+  for row in "${FINDINGS[@]}"; do
+    IFS=$'\t' read -r area scn detail <<<"$row"
+    # A table cell holds no raw pipe, backtick or line break.
+    detail="${detail//|/\\|}"
+    detail="${detail//\`/\'}"
+    detail="${detail//\\n/<br>}"
+    # A literal @ would notify the account it names.
+    detail="${detail//@/&#64;}"
+    scn="${scn//@/&#64;}"
+    # shellcheck disable=SC2016 # the backticks are markdown, not a substitution
+    printf '| %s | `%s` | %s |\n' "$area" "$scn" "$detail"
+  done
+}
+
+# self_test: runs this script on fixtures made from the committed evidence: an
+# unchanged copy must report nothing, and each intentional change must be
+# reported under its area and scenario.
+self_test() {
+  local work rc report
+  work="$(scratch_dir drift-selftest)"
+  report="$work/report.md"
+  cp -a "$COMMITTED" "$work/fresh"
+  rc=0
+  "$SCRIPT_DIR/drift-check" --fresh "$work/fresh" --report "$report" || rc=$?
+  ((rc == 0)) || die "self test: an unchanged copy reported a difference (rc $rc)"
+
+  # A screen with one word changed, a hook payload without a key and a hub
+  # daemon in a process tree, each in the copy of a different release.
+  local screen hook tree
+  screen="$(cd "$COMMITTED" && compgen -G 'screens/approval/*.txt' | head -n 1)"
+  hook="$(cd "$COMMITTED" && compgen -G 'hooks/*/001-*.json' | head -n 1)"
+  tree="install/process-sandbox-tui.txt"
+  [[ -n "$screen" && -n "$hook" && -f "$COMMITTED/$tree" ]] || die "self test: the committed evidence lacks its fixtures"
+  sed 's/Approve/Allow/' "$COMMITTED/$screen" >"$work/fresh/$screen"
+  jq 'del(.payload.timestamp)' "$COMMITTED/$hook" >"$work/fresh/$hook"
+  printf '.cline: x --cline-hub-daemon --port 1\n' >>"$work/fresh/$tree"
+  sed 's/^release=.*/release=9.9.9/' "$COMMITTED/RELEASE" >"$work/fresh/RELEASE"
+  rc=0
+  "$SCRIPT_DIR/drift-check" --fresh "$work/fresh" --report "$report" || rc=$?
+  ((rc == 1)) || die "self test: the changed copy did not report a difference (rc $rc)"
+  grep -q '^<!-- drift-release: 9.9.9 -->$' "$report" || die "self test: the report names no release"
+  screen="${screen#screens/}"
+  grep -qF "| screens | \`${screen%.txt}\`" "$report" || die "self test: the changed screen is not reported"
+  hook="${hook#hooks/}"
+  grep -qF "| hooks | \`${hook%/*}\`" "$report" || die "self test: the changed hook payload is not reported"
+  grep -qF "| process | \`$tree\`" "$report" || die "self test: the hub daemon line is not reported"
+  printf 'drift-check: self test passed\n' >&2
+}
+
+main() {
+  while (($# > 0)); do
+    case "$1" in
+      --self-test)
+        SELF_TEST=1
+        shift
+        ;;
+      --fresh | --committed | --release | --stage | --report)
+        (($# > 1)) || die "$1 needs a value"
+        case "$1" in
+          --fresh) FRESH="$2" ;;
+          --committed) COMMITTED="$2" ;;
+          --release) RELEASE="$2" ;;
+          --stage) STAGE="$2" ;;
+          --report) REPORT="$2" ;;
+        esac
+        shift 2
+        ;;
+      --detect)
+        DETECT=1
+        shift
+        ;;
+      -h | --help)
+        usage
+        exit 0
+        ;;
+      *) die "unknown argument: $1" ;;
+    esac
+  done
+  [[ -d "$COMMITTED" ]] || die "no committed evidence at $COMMITTED"
+  for tool in jq perl diff; do
+    command -v "$tool" >/dev/null 2>&1 || die "missing tool: $tool"
+  done
+  COMMITTED="$(realpath -- "$COMMITTED")"
+  if ((SELF_TEST == 1)); then
+    self_test
+    exit 0
+  fi
+  [[ -n "$FRESH" && -d "$FRESH" ]] || die "--fresh DIR is required and must exist"
+  FRESH="$(realpath -- "$FRESH")"
+  COMMITTED="$(realpath -- "$COMMITTED")"
+  [[ "$FRESH" != "$COMMITTED" ]] || die "--fresh is the committed evidence itself"
+  OLD_REL="$(release_field "$COMMITTED" release)"
+  OLD_HUB_REL="$(release_field "$COMMITTED" old_release)"
+  NEW_REL="${RELEASE:-$(release_field "$FRESH" release)}"
+  NEW_HUB_REL="$(release_field "$FRESH" old_release)"
+  [[ "$NEW_REL" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "no release: pass --release X.Y.Z or capture the version step"
+  [[ -n "$OLD_REL" ]] || OLD_REL="$NEW_REL"
+  overlay_stage
+
+  compare_stage
+  compare_screens
+  compare_hooks
+  compare_process
+  compare_help
+  ((DETECT == 0)) || run_detect
+
+  if [[ -n "$REPORT" ]]; then
+    write_report >"$REPORT"
+  else
+    write_report
+  fi
+  ((${#FINDINGS[@]} == 0)) || exit 1
+}
+
+main "$@"

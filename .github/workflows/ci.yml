@@ -29,13 +29,17 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/sc"
           "$RUNNER_TEMP/sc/bin/pip" install --quiet shellcheck-py==0.11.0.1
-          "$RUNNER_TEMP/sc/bin/shellcheck" scripts/capture scripts/hook-log scripts/smoke
+          "$RUNNER_TEMP/sc/bin/shellcheck" scripts/capture scripts/hook-log scripts/smoke scripts/drift-check scripts/drift-issue
       - name: model stub syntax
         run: python3 -I -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' scripts/model-stub
       - name: capture dry run
         # Tool check, redaction and id-placeholder self tests, and a loopback
         # round trip through the model stub; no network and no Cline binary.
         run: scripts/capture --root "$RUNNER_TEMP/capture" --dry-run all
+      - name: drift check self test
+        # An identical capture reports nothing; a changed screen, hook
+        # payload shape or hub daemon line is reported by scenario.
+        run: scripts/drift-check --self-test
       - name: evidence carries no credential or home path
         # The kit never signs in and never copies providers.json or a hub
         # discovery record; a credential-shaped string in compat/ is a bug.
