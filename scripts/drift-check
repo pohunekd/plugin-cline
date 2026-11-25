@@ -95,12 +95,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# scratch_dir <prefix>: a new directory removed on exit.
+# scratch_dir <prefix>: a new directory, left in SCRATCH and removed on exit
+# (a command substitution would register it in a subshell and lose it).
+SCRATCH=""
 scratch_dir() {
-  local dir
-  dir="$(mktemp -d "${TMPDIR:-/tmp}/$1.XXXXXX")"
-  TMP_DIRS+=("$dir")
-  printf '%s\n' "$dir"
+  SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/$1.XXXXXX")"
+  TMP_DIRS+=("$SCRATCH")
 }
 
 # norm <release> <older release>: stdin with the two releases replaced by
@@ -280,7 +280,8 @@ overlay_stage() {
   for missed in "$STAGE"/*/MISSED.txt; do
     [[ -e "$missed" ]] || continue
     if [[ -z "$view" ]]; then
-      view="$(scratch_dir drift-fresh)"
+      scratch_dir drift-fresh
+      view="$SCRATCH"
       cp -a "$FRESH/." "$view/"
     fi
     cp -a "$(dirname "$missed")/." "$view/"
@@ -305,7 +306,8 @@ compare_stage() {
 run_detect() {
   local work out rc=0
   command -v cargo >/dev/null 2>&1 || die "--detect needs cargo"
-  work="$(scratch_dir drift-detect)"
+  scratch_dir drift-detect
+  work="$SCRATCH"
   mkdir -p "$work/kit"
   cp -a "$REPO_DIR/kit/." "$work/kit/"
   rm -rf "$work/kit/target"
@@ -348,7 +350,8 @@ write_report() {
 # reported under its area and scenario.
 self_test() {
   local work rc report
-  work="$(scratch_dir drift-selftest)"
+  scratch_dir drift-selftest
+  work="$SCRATCH"
   report="$work/report.md"
   cp -a "$COMMITTED" "$work/fresh"
   rc=0
