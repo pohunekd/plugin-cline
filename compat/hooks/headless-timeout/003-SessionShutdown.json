@@ -1,5 +1,5 @@
 {
-  "event": "TaskComplete",
+  "event": "SessionShutdown",
   "env_names": [
     "CAPTURE_PROBE",
     "CLINE_BUILD_ENV",
@@ -46,28 +46,28 @@
     "CLINE_SANDBOX_DATA_DIR": "/capture-root____/s/headless-timeout/fakehome/.cline/data",
     "CLINE_SESSION_DATA_DIR": "/capture-root____/s/headless-timeout/fakehome/.cline/data/sessions",
     "CLINE_TEAM_DATA_DIR": "/capture-root____/s/headless-timeout/fakehome/.cline/data/teams",
-    "CLINE_WRAPPER_PATH": "/capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/cline"
+    "CLINE_WRAPPER_PATH": "/capture-root____/prefix/3.0.75/lib/node_modules/cline/bin/cline"
   },
   "ancestors": [
     {
       "comm": ".cline",
-      "args": "/capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/.cline --json -t 3 a headless turn"
+      "args": "/capture-root____/prefix/3.0.75/lib/node_modules/cline/bin/.cline --json -t 3 a headless turn"
     },
     {
       "comm": "node-MainThread",
-      "args": "node /capture-root____/prefix/3.0.74/bin/cline --json -t 3 a headless turn"
+      "args": "node /capture-root____/prefix/3.0.75/bin/cline --json -t 3 a headless turn"
     },
     {
       "comm": "bash",
-      "args": "<232 chars>"
+      "args": "<266 chars>"
     }
   ],
   "payload": {
     "clineVersion": "",
-    "timestamp": "2026-11-06T00:18:27.295Z",
-    "taskId": "conv_0000000000016_0000000",
+    "timestamp": "2026-11-25T22:30:25.738Z",
+    "taskId": "conv_0000000000019_0000000",
     "sessionContext": {
-      "rootSessionId": "0000000000005_00000"
+      "rootSessionId": "0000000000006_00000"
     },
     "workspaceRoots": [
       "/capture-root____/s/headless-timeout/ws"
@@ -79,16 +79,8 @@
       "latestGitBranchName": "main"
     },
     "userId": "capture",
-    "agent_id": "agent_00000000-0000-4000-8000-000000000014",
+    "agent_id": "agent_00000000-0000-4000-8000-000000000017",
     "parent_agent_id": null,
-    "hookName": "agent_end",
-    "iteration": 1,
-    "turn": {
-      "outputText": "Slow headless reply.",
-      "status": "completed"
-    },
-    "taskComplete": {
-      "taskMetadata": {}
-    }
+    "hookName": "session_shutdown"
   }
 }

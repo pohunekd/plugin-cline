@@ -1,6 +1,6 @@
 # Runtime descriptor of the Cline CLI package.
 #
-# Verified against Cline 3.0.74 (compat/RELEASE). Core's `cline-hook-v1`
+# Verified against Cline 3.0.75 (compat/RELEASE). Core's `cline-hook-v1`
 # handler keeps every launch inside the TUI's process tree (the default mode
 # attaches to a running Cline hub, or starts one that outlives the session,
 # compat/hub/) and installs the reporter hooks that follow the session

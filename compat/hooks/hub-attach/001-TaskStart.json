@@ -34,24 +34,24 @@
     "CLINE_HUB_PORT": "27463",
     "CLINE_NO_AUTO_UPDATE": "1",
     "CLINE_NO_INTERACTIVE": "1",
-    "CLINE_WRAPPER_PATH": "/capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/cline"
+    "CLINE_WRAPPER_PATH": "/capture-root____/prefix/3.0.75/lib/node_modules/cline/bin/cline"
   },
   "ancestors": [
     {
       "comm": ".cline",
-      "args": "/capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/.cline --cline-hub-daemon --cwd /capture-root____/s/hub-attach/ws --host 127.0.0.1 --port 27463 --pathname /hub"
+      "args": "/capture-root____/prefix/3.0.75/lib/node_modules/cline/bin/.cline --cline-hub-daemon --cwd /capture-root____/s/hub-attach/ws --host 127.0.0.1 --port 27463 --pathname /hub"
     },
     {
       "comm": "bash",
-      "args": "<232 chars>"
+      "args": "<266 chars>"
     }
   ],
   "payload": {
     "clineVersion": "",
-    "timestamp": "2026-11-06T00:19:51.327Z",
-    "taskId": "conv_0000000000028_0000000",
+    "timestamp": "2026-11-25T22:31:53.950Z",
+    "taskId": "conv_0000000000033_0000000",
     "sessionContext": {
-      "rootSessionId": "0000000000007_00000"
+      "rootSessionId": "0000000000009_00000"
     },
     "workspaceRoots": [
       "/capture-root____/s/hub-attach/ws"
@@ -63,7 +63,7 @@
       "latestGitBranchName": "main"
     },
     "userId": "capture",
-    "agent_id": "agent_00000000-0000-4000-8000-000000000025",
+    "agent_id": "agent_00000000-0000-4000-8000-000000000030",
     "parent_agent_id": null,
     "hookName": "agent_start",
     "taskStart": {

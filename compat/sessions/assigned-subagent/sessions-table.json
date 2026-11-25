@@ -2,7 +2,7 @@
   {
     "session_id": "c0ffee00-0000-4000-8000-000000000001",
     "source": "cli",
-    "started_at": "2026-11-06T00:16:24.606Z",
+    "started_at": "2026-11-25T22:28:46.635Z",
     "ended_at": null,
     "exit_code": null,
     "status": "idle",
@@ -25,7 +25,7 @@
     "metadata_json": {
       "sessionHistoryOrigin": {
         "mode": "user",
-        "version": "3.0.74"
+        "version": "3.0.75"
       },
       "git": {
         "branch": "main"
@@ -33,14 +33,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793924186893,
+          "createdAt": 1795645728933,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793924186893,
+            "createdAt": 1795645728933,
             "runCount": 1,
             "kind": "commit"
           }
@@ -57,8 +57,8 @@
         "totalCost": 0
       },
       "aggregateUsage": {
-        "inputTokens": 30,
-        "outputTokens": 15,
+        "inputTokens": 40,
+        "outputTokens": 20,
         "cacheReadTokens": 0,
         "cacheWriteTokens": 0,
         "totalCost": 0
@@ -67,13 +67,13 @@
     "transcript_path": "",
     "hook_path": "",
     "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/c0ffee00-0000-4000-8000-000000000001.messages.json",
-    "updated_at": "2026-11-06T00:16:29.396Z"
+    "updated_at": "2026-11-25T22:28:50.923Z"
   },
   {
-    "session_id": "c0ffee00-0000-4000-8000-000000000001__agent_00000000-0000-4000-8000-000000000002",
+    "session_id": "c0ffee00-0000-4000-8000-000000000001__agent_00000000-0000-4000-8000-000000000003",
     "source": "cli",
-    "started_at": "2026-11-06T00:16:29.139Z",
-    "ended_at": "2026-11-06T00:16:29.187Z",
+    "started_at": "2026-11-25T22:28:50.752Z",
+    "ended_at": "2026-11-25T22:28:50.806Z",
     "exit_code": 0,
     "status": "completed",
     "status_lock": 7,
@@ -88,20 +88,20 @@
     "enable_teams": 1,
     "parent_session_id": "c0ffee00-0000-4000-8000-000000000001",
     "parent_agent_id": "agent_00000000-0000-4000-8000-000000000001",
-    "agent_id": "agent_00000000-0000-4000-8000-000000000002",
-    "conversation_id": "conv_0000000000003_0000000",
+    "agent_id": "agent_00000000-0000-4000-8000-000000000003",
+    "conversation_id": "conv_0000000000005_0000000",
     "is_subagent": 1,
     "prompt": "Say done.",
     "metadata_json": {
       "sessionHistoryOrigin": {
         "mode": "subagent",
-        "version": "3.0.74"
+        "version": "3.0.75"
       },
       "title": "Say done."
     },
     "transcript_path": "",
     "hook_path": "",
-    "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/agent_00000000-0000-4000-8000-000000000002.messages.json",
-    "updated_at": "2026-11-06T00:16:29.187Z"
+    "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/agent_00000000-0000-4000-8000-000000000003.messages.json",
+    "updated_at": "2026-11-25T22:28:50.806Z"
   }
 ]

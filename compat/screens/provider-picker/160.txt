@@ -30,7 +30,7 @@
                                                  OpenRouter
                                                  Ollama
                                                  AWS Bedrock
-                                               ▼ 228 more
+                                               ▼ 320 more
 
                                               Type to search, ↑/↓ navigate, Enter to select, Esc to go back,
                                               Ctrl+C to exit

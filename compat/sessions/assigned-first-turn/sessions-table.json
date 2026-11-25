@@ -2,7 +2,7 @@
   {
     "session_id": "c0ffee00-0000-4000-8000-000000000001",
     "source": "cli",
-    "started_at": "2026-11-06T00:16:24.606Z",
+    "started_at": "2026-11-25T22:28:46.635Z",
     "ended_at": null,
     "exit_code": null,
     "status": "idle",
@@ -25,7 +25,7 @@
     "metadata_json": {
       "sessionHistoryOrigin": {
         "mode": "user",
-        "version": "3.0.74"
+        "version": "3.0.75"
       },
       "git": {
         "branch": "main"
@@ -33,14 +33,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793924186893,
+          "createdAt": 1795645728933,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793924186893,
+            "createdAt": 1795645728933,
             "runCount": 1,
             "kind": "commit"
           }
@@ -67,6 +67,6 @@
     "transcript_path": "",
     "hook_path": "",
     "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/c0ffee00-0000-4000-8000-000000000001.messages.json",
-    "updated_at": "2026-11-06T00:16:27.012Z"
+    "updated_at": "2026-11-25T22:28:49.040Z"
   }
 ]

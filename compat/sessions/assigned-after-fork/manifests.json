@@ -3,8 +3,8 @@
     "version": 1,
     "session_id": "c0ffee00-0000-4000-8000-000000000001",
     "source": "cli",
-    "started_at": "2026-11-06T00:16:24.606Z",
-    "ended_at": "2026-11-06T00:16:31.859Z",
+    "started_at": "2026-11-25T22:28:46.635Z",
+    "ended_at": "2026-11-25T22:28:53.288Z",
     "exit_code": 0,
     "status": "completed",
     "interactive": true,
@@ -20,7 +20,7 @@
     "metadata": {
       "sessionHistoryOrigin": {
         "mode": "user",
-        "version": "3.0.74"
+        "version": "3.0.75"
       },
       "git": {
         "branch": "main"
@@ -28,14 +28,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793924186893,
+          "createdAt": 1795645728933,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793924186893,
+            "createdAt": 1795645728933,
             "runCount": 1,
             "kind": "commit"
           }
@@ -52,8 +52,8 @@
         "totalCost": 0
       },
       "aggregateUsage": {
-        "inputTokens": 30,
-        "outputTokens": 15,
+        "inputTokens": 40,
+        "outputTokens": 20,
         "cacheReadTokens": 0,
         "cacheWriteTokens": 0,
         "totalCost": 0
@@ -65,8 +65,8 @@
     "version": 1,
     "session_id": "0000000000002_00000",
     "source": "cli",
-    "started_at": "2026-11-06T00:16:34.024Z",
-    "ended_at": "2026-11-06T00:16:36.017Z",
+    "started_at": "2026-11-25T22:28:55.453Z",
+    "ended_at": "2026-11-25T22:28:57.708Z",
     "exit_code": 0,
     "status": "completed",
     "interactive": true,
@@ -74,7 +74,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/hooks/ws",
     "workspace_root": "/capture-root____/s/hooks/ws",
-    "team_name": "team-00003",
+    "team_name": "team-00002",
     "enable_tools": true,
     "enable_spawn": true,
     "enable_teams": true,
@@ -82,7 +82,7 @@
     "metadata": {
       "sessionHistoryOrigin": {
         "mode": "user",
-        "version": "3.0.74"
+        "version": "3.0.75"
       },
       "git": {
         "branch": "main"
@@ -90,14 +90,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793924194150,
+          "createdAt": 1795645735598,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793924194150,
+            "createdAt": 1795645735598,
             "runCount": 1,
             "kind": "commit"
           }
@@ -127,8 +127,8 @@
     "version": 1,
     "session_id": "0000000000003_00000",
     "source": "cli",
-    "started_at": "2026-11-06T00:16:36.019Z",
-    "ended_at": "2026-11-06T00:16:39.985Z",
+    "started_at": "2026-11-25T22:28:57.801Z",
+    "ended_at": "2026-11-25T22:29:01.901Z",
     "exit_code": 0,
     "status": "completed",
     "interactive": true,
@@ -136,7 +136,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/hooks/ws",
     "workspace_root": "/capture-root____/s/hooks/ws",
-    "team_name": "team-00004",
+    "team_name": "team-00003",
     "enable_tools": true,
     "enable_spawn": true,
     "enable_teams": true,
@@ -144,7 +144,7 @@
     "metadata": {
       "sessionHistoryOrigin": {
         "mode": "user",
-        "version": "3.0.74"
+        "version": "3.0.75"
       },
       "git": {
         "branch": "main"
@@ -152,14 +152,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793924194150,
+          "createdAt": 1795645735598,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793924194150,
+            "createdAt": 1795645735598,
             "runCount": 1,
             "kind": "commit"
           }
@@ -184,19 +184,19 @@
       },
       "fork": {
         "forkedFromSessionId": "0000000000002_00000",
-        "forkedAt": "2026-11-06T00:16:36.019Z",
+        "forkedAt": "2026-11-25T22:28:57.796Z",
         "source": "cli",
         "checkpoints": {
           "latest": {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793924194150,
+            "createdAt": 1795645735598,
             "runCount": 1,
             "kind": "commit"
           },
           "history": [
             {
               "ref": "0000000000000000000000000000000000000001",
-              "createdAt": 1793924194150,
+              "createdAt": 1795645735598,
               "runCount": 1,
               "kind": "commit"
             }

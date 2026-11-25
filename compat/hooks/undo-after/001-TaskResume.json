@@ -49,12 +49,12 @@
     "CLINE_SANDBOX_DATA_DIR": "/capture-root____/s/undo/fakehome/.cline/data",
     "CLINE_SESSION_DATA_DIR": "/capture-root____/s/undo/fakehome/.cline/data/sessions",
     "CLINE_TEAM_DATA_DIR": "/capture-root____/s/undo/fakehome/.cline/data/teams",
-    "CLINE_WRAPPER_PATH": "/capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/cline"
+    "CLINE_WRAPPER_PATH": "/capture-root____/prefix/3.0.75/lib/node_modules/cline/bin/cline"
   },
   "ancestors": [
     {
       "comm": ".cline",
-      "args": "/capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/.cline --id c0ffee00-0000-4000-8000-000000000003"
+      "args": "/capture-root____/prefix/3.0.75/lib/node_modules/cline/bin/.cline --id c0ffee00-0000-4000-8000-000000000003"
     },
     {
       "comm": "node-MainThread",
@@ -66,15 +66,15 @@
     },
     {
       "comm": "bash",
-      "args": "<232 chars>"
+      "args": "<266 chars>"
     }
   ],
   "payload": {
     "clineVersion": "",
-    "timestamp": "2026-11-06T00:19:05.910Z",
-    "taskId": "conv_0000000000025_0000000",
+    "timestamp": "2026-11-25T22:31:06.349Z",
+    "taskId": "conv_0000000000028_0000000",
     "sessionContext": {
-      "rootSessionId": "0000000000006_00000"
+      "rootSessionId": "0000000000007_00000"
     },
     "workspaceRoots": [
       "/capture-root____/s/undo/ws"
@@ -86,7 +86,7 @@
       "latestGitBranchName": "main"
     },
     "userId": "capture",
-    "agent_id": "agent_00000000-0000-4000-8000-000000000022",
+    "agent_id": "agent_00000000-0000-4000-8000-000000000025",
     "parent_agent_id": null,
     "hookName": "agent_resume",
     "taskResume": {
