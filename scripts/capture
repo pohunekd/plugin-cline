@@ -866,7 +866,7 @@ step_version() {
   # cache that npm's postinstall creates.
   rm -f "$w/bin/.cline"
   process_tree_capture nocache
-  env -i HOME="$s/fakehome" PATH=/usr/bin:/bin CLINE_DIR="$s/fakehome/.cline" CLINE_DATA_DIR="$s/fakehome/.cline/data" \
+  env -i HOME="$s/fakehome" PATH="$ROOT/kit/bin:/usr/bin:/bin" CLINE_DIR="$s/fakehome/.cline" CLINE_DATA_DIR="$s/fakehome/.cline/data" \
     CLINE_NO_AUTO_UPDATE=1 node "$w/postinstall.mjs" 2>&1 | emit "$OUT/install/postinstall.txt"
   [[ -e "$w/bin/.cline" ]] || die "postinstall created no bin/.cline"
   printf 'bin/.cline: %s bytes, same inode as the platform binary: %s\n' "$(stat -c %s "$w/bin/.cline")" \
@@ -2013,6 +2013,9 @@ main() {
       bash "$SCRIPT_DIR/capture" --root /run/capture-root --out "$OUT" --release "$RELEASE" \
       ${OLD_RELEASE:+--old-release "$OLD_RELEASE"} "${steps[@]}"
   fi
+  # A command that fails under `set -e` is named in the log (line, command, status).
+  set -E
+  trap 'rc=$?; printf "capture: line %s: %s failed (rc %s)\n" "$LINENO" "$BASH_COMMAND" "$rc" >&2' ERR
   mkdir -p "$ROOT/tmux"
   export TMUX_TMPDIR="$ROOT/tmux"
   assert_isolated
@@ -2024,6 +2027,14 @@ main() {
   printf '#!/bin/bash\nprintf "%%s\\n" "$*" >>%q\n' "$ROOT/kit/opened.log" >"$ROOT/kit/bin/xdg-open"
   chmod +x "$ROOT/kit/bin/xdg-open"
   : >"$ROOT/kit/opened.log"
+  # The CLI wrapper is a node script and every run uses PATH=kit/bin:...:/usr/bin:/bin;
+  # a node outside those two directories (a toolcache install) is linked into kit/bin.
+  local node_bin
+  node_bin="$(command -v node)"
+  case "$node_bin" in
+    /usr/bin/node | /bin/node) ;;
+    *) ln -sf "$node_bin" "$ROOT/kit/bin/node" ;;
+  esac
   local stage failed=()
   for arg in "${steps[@]}"; do
     log "step: $arg"
