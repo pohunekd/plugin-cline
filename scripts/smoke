@@ -371,10 +371,12 @@ status_out="$(integration_json status)" || die "integration status failed: $stat
 doctor_out="$(integration_json doctor)" || die "integration doctor failed: $doctor_out"
 [[ "$(foreign_sums)" == "$foreign_before" ]] || die "status or doctor changed a foreign hook"
 # Outside a Pohunek session (no POHUNEK_ENV) the reporter exits 0 at once and
-# prints nothing, with or without a payload.
+# prints nothing, also with a payload. The payload comes from a here-string: the
+# reporter does not read it, and a pipe would let `pipefail` see the SIGPIPE.
+payload='{"hookName":"agent_resume","sessionContext":{"rootSessionId":"x"}}'
 for ev in "${REPORTER_EVENTS[@]}"; do
-  outside="$(printf '{"hookName":"agent_resume","sessionContext":{"rootSessionId":"x"}}' |
-    env -i PATH="$AGENT_PATH" CLINE_SANDBOX=1 sh "$HOOKS_DIR/$ev.sh" 2>&1)" || die "$ev.sh exited non-zero outside Pohunek"
+  outside="$(env -i PATH="$AGENT_PATH" CLINE_SANDBOX=1 "$HOOKS_DIR/$ev.sh" 2>&1 <<<"$payload")" ||
+    die "$ev.sh exited non-zero outside Pohunek: $outside"
   [[ -z "$outside" ]] || die "$ev.sh printed outside Pohunek: $outside"
 done
 log "install: the six reporter files carry the ownership marker and are silent no-ops outside Pohunek, foreign hooks unchanged"
@@ -456,7 +458,9 @@ assert_no_hub "resumed session"
 [[ "$(native_of turn)" == "$turn_native" ]] || die "the resumed session changed its native reference"
 pk session stop "$turn_id" >/dev/null
 # The bare session never took a prompt, so Cline wrote no <id>/<id>.json for
-# its assigned reference and no hook reported it.
+# its assigned reference and no hook reported it. For a session that did take a
+# prompt, core 0.44.0 does not check a reported reference, so this refusal is
+# not asserted for it (zajca/pohunek#2528).
 refusal="$(pk session resume "$bare_id" --json || true)"
 [[ "$(jq -r '.err.code' <<<"$refusal")" == agent_native_reference_missing ]] ||
   die "resume of a session without a manifest was not refused: $refusal"

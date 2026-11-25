@@ -180,13 +180,16 @@ What the package does:
   does, per launch. A hub that is already running is left alone and not used
   (`scripts/smoke`); whether a later Cline release keeps honouring
   `CLINE_SANDBOX` is what the smoke's "no hub daemon" assertions guard.
-- **Reported references are not checked for existence.** The descriptor's
-  `<id>/<id>.json` check applies to the reference core assigned at launch. Once
-  a turn's hook has reported the session id (the first turn does), core 0.44.0
-  relaunches without looking for the manifest, so a missing or moved manifest
-  is not refused as `agent_native_reference_missing`; what Cline does with it
-  is unverified (`scripts/smoke` asserts the refusal only for a session that
-  never took a prompt).
+- **Reported references are not checked for existence (core gap,
+  [zajca/pohunek#2528](https://github.com/zajca/pohunek/issues/2528)).** The
+  descriptor keeps `strategy = "assigned"` and its `<id>/<id>.json` check, which
+  applies to the reference core assigned at launch. Once a turn's hook has
+  reported the session id (the first turn does), core 0.44.0 relaunches without
+  looking for the manifest. After a prompt, a moved or deleted session file is
+  therefore not refused as `agent_native_reference_missing`: `cline --id <id>`
+  starts an empty conversation under the old id until core fixes it.
+  `scripts/smoke` asserts the refusal only for a session that never took a
+  prompt and does not claim the reported case is refused.
 - **Cline 4.x and later are admitted.** `version_probe` is open above
   `min = "3.0.74"` (`version-probe-open-range-v1`); a newer release launches
   without a capture, and drift is caught by capturing new releases
@@ -218,8 +221,8 @@ What the package does:
   still reports `enabled: true` with it set, and what would be sent is
   unverified (`compat/install/telemetry-selfcheck.txt`). The package does not
   write this file.
-- **Fork is unsupported** as a Pohunek operation (`[fork] supported = false`;
-  Cline forks only inside its TUI). The reported reference follows `/clear`,
+- **Fork is unsupported** as a Pohunek operation (the descriptor has no `[fork]`
+  table; Cline forks only inside its TUI). The reported reference follows `/clear`,
   `/fork` and an in-TUI `/history` switch at the next turn (the hooks of that
   turn carry the new id, `compat/hooks/assigned-*`; `scripts/smoke` drives
   `/clear` and `/fork`; `/history` and `/undo` are unverified through core).
@@ -483,7 +486,7 @@ schedules it after `start()` has run that turn). NDJSON in
   those releases implement, but the kit and the smoke ran only against 0.44.0.
 - **`submit_delay_ms = 500`**: the capture kit's pause between typed text and
   Enter; a shorter delay is untested.
-- **Cline 3.0.75 and later 3.x**: accepted by the version range, never captured.
+- **Every Cline release after 3.0.74**: accepted by the version range, never captured.
 - **macOS**: everything; the manager's capture lands as `compat/macos-arm64/`.
 - **Arch package** (`cline-cli`): the host package is 3.0.73, so the `arch`
   step recorded nothing; its layout under the release is unverified.

@@ -34,7 +34,7 @@ prompt_arg = false
 # `cline --version` prints the release alone on stdout, also through the Node
 # wrapper (compat/install/version.txt).
 # Open-ended range: every release from `min` on is admitted, so a newer 3.x or
-# 4.x launches without a package update; drift is caught by periodic capture.
+# 4.x launches without a package update; drift is caught by capturing new releases.
 version_probe = { parser = "semver-v1", args = ["--version"], min = "3.0.74" }
 
 # Compiled core handler: it sets `CLINE_SANDBOX=1` and `CLINE_SANDBOX_DATA_DIR`
@@ -82,18 +82,16 @@ supported = true
 reference_kind = "id"
 args = ["--id", "{reference}"]
 
-# Cline forks only inside its TUI (`/fork`); no launch argument forks.
-[fork]
-supported = false
-
-# Core generates the id and Cline stores the session under it. The reference
-# goes stale after `/clear`, `/fork` or an in-TUI `/history` switch.
+# Core generates the id and Cline stores the session under it. The reporter
+# hooks re-bind the reference to the reported id after `/clear`, `/fork` or an
+# in-TUI `/history` switch. Cline forks only inside its TUI; core 0.44.0 reads
+# no `[fork]` table, so the descriptor has none.
 [native_reference]
 strategy = "assigned"
 launch_args = ["--id", "{reference}"]
 
-# Recovery needs the session manifest `<id>/<id>.json`, which Cline writes at
-# the first prompt, below `<data root>/sessions`. The data root is
+# Recovery of the reference core assigned needs the session manifest
+# `<id>/<id>.json`, which Cline writes at the first prompt, below `<data root>/sessions`. The data root is
 # `CLINE_DATA_DIR`, else `<config home>/data`.
 [native_reference.existence]
 check = "file"

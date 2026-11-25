@@ -13,7 +13,8 @@ use std::time::{Duration, Instant};
 use package::directory::build_directory_archive;
 use package::{read_archive, Limits};
 use pohunek_daemon::agent::host::{
-    definition_from_archive, HandlerId, InputReadiness, LaunchProgram, RuntimeDefinition,
+    definition_from_archive, HandlerId, InputReadiness, LaunchProgram, Placement,
+    RuntimeDefinition,
 };
 use pohunek_daemon::agent::NativeReferenceStrategy;
 use pohunek_daemon::detect::{DetectionConfig, Detector, DetectorConfig, Manifest};
@@ -112,10 +113,10 @@ fn the_descriptor_declares_the_launch_contract_of_the_captured_release() {
         definition.hook_schema().map(|schema| schema.id),
         Some("identity-subagent-v1")
     );
-    let debug = format!("{definition:?}");
-    assert!(
-        debug.contains("keep_local_handler: true") || debug.contains("KeepLocalHandler"),
-        "the handler-backed in-process placement is declared: {debug}"
+    assert_eq!(
+        definition.placement().map(Placement::keeps_local_by_handler),
+        Some(true),
+        "the handler keeps the in-process placement local"
     );
 }
 
