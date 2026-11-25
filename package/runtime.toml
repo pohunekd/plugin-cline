@@ -1,15 +1,24 @@
 # Runtime descriptor of the Cline CLI package.
 #
-# Verified against Cline 3.0.74 (compat/RELEASE). Phase 1 limit: in `auto`
-# backend mode a launch attaches to a running Cline hub, or starts one that
-# outlives the session (compat/hub/), so hub routing is not controlled until
-# the handler of the next phase; the package is not admitted before then.
+# Verified against Cline 3.0.74 (compat/RELEASE). Core's `cline-hook-v1`
+# handler keeps every launch inside the TUI's process tree (the default mode
+# attaches to a running Cline hub, or starts one that outlives the session,
+# compat/hub/) and installs the reporter hooks that follow the session
+# identity and its subagents. Every feature in `requires` exists from core
+# 0.42.0; the minimum core is 0.44.0, the release the kit (kit/Cargo.toml) and
+# the smoke ran against.
 
 schema = 1
 id = "pohunek.runtime.cline"
 version = "0.1.0"
 runtime_api = 1
-requires = ["launch-env-v1", "input-refuse-while-blocked-v1"]
+requires = [
+  "launch-env-v1",
+  "input-refuse-while-blocked-v1",
+  "integration-cline-hook-v1",
+  "placement-v1",
+  "version-probe-open-range-v1",
+]
 
 [runtime]
 id = "cline"
@@ -24,9 +33,23 @@ detect_manifest = "detect.toml"
 prompt_arg = false
 # `cline --version` prints the release alone on stdout, also through the Node
 # wrapper (compat/install/version.txt).
-# STOPGAP: `below` is mandatory, so the open-ended range `>=3.0.74` is not
-# expressible; the next major bounds it until zajca/pohunek#1963 lands.
-version_probe = { parser = "semver-v1", args = ["--version"], min = "3.0.74", below = "4.0.0" }
+# Open-ended range: every release from `min` on is admitted, so a newer 3.x or
+# 4.x launches without a package update; drift is caught by periodic capture.
+version_probe = { parser = "semver-v1", args = ["--version"], min = "3.0.74" }
+
+# Compiled core handler: it sets `CLINE_SANDBOX=1` and `CLINE_SANDBOX_DATA_DIR`
+# on every create and resume launch, so a session stays in the TUI process
+# and keeps the user's store, and it installs the reporter into
+# `<CLINE_DIR>/hooks/` (see `[config_home]`).
+[integration]
+handler = "cline-hook-v1"
+hook_schema = "identity-subagent-v1"
+
+# The agent runs only in its worker generation's process tree; the handler's
+# launch input above is what keeps Cline from using a shared hub.
+[placement]
+mode = "in_process"
+keep_local_handler = true
 
 # Cline replaces its install in the background at exit (npm, pnpm, yarn and
 # bun installs) unless told not to; a pinned release must not change under a

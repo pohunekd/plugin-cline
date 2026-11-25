@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # End-to-end check of the Cline package against a pohunek build: links
-# `package/` into an isolated daemon, launches the Cline release installed
-# under --cline-prefix and asserts launch, input, status, approval refusal and
-# resume.
+# `package/` into an isolated daemon, installs core's `cline-hook-v1` reporter,
+# launches the Cline release installed under --cline-prefix through the
+# package's own launch path (no CLINE_SANDBOX* variable is set by this script)
+# and asserts launch, input, status, approval refusal, resume, local placement
+# beside a running Cline hub, the reported session reference across `/clear`
+# and `/fork`, a reported subagent, and that install, doctor and uninstall
+# leave a foreign hook byte-identical.
 #
 # Everything (daemon, workers, Cline, the model stub) runs in user, network,
 # mount, UTS and PID namespaces: only a loopback interface, a private process
@@ -104,8 +108,10 @@ if [[ "${SMOKE_STAGE:-host}" == host ]]; then
     die "$ROOT is not empty and was not created by this script"
   fi
   touch "$ROOT/$MARKER"
-  # A socket path is bounded by sun_path; fail early with a clear message.
-  ((${#ROOT} <= 60)) || die "--root is too long for the daemon socket path (${#ROOT} > 60)"
+  # A socket path is bounded by sun_path (107 bytes): the longest one is a
+  # worker's hook socket, `<root>/rt/pohunek/workers/s-<26 chars>/.s<16 chars>`,
+  # 67 bytes below the root.
+  ((${#ROOT} <= 40)) || die "--root is too long for the worker socket path (${#ROOT} > 40)"
   CLINE_PREFIX="$(cd "$CLINE_PREFIX" && pwd -P)"
   [[ -x "$CLINE_PREFIX/bin/cline" ]] || die "$CLINE_PREFIX is not a Cline prefix"
   wrapper="$CLINE_PREFIX/lib/node_modules/cline"
@@ -251,12 +257,21 @@ wait_for() { # <description> <command...>
 
 # --- model stub ------------------------------------------------------------
 # Replies are served in order across the run: the held first turn, the turn
-# after resume, a command that needs approval, and its follow-up.
+# after resume, a command that needs approval (never answered), the turn
+# beside a running hub, the reported-identity turns (first, after /clear,
+# after /fork) and a subagent turn (the subagent's own request offers no
+# `team_status` tool, which selects its reply).
 jq -n --argjson hold "$HOLD_SECONDS" --arg cmd "touch $APPROVAL_MARKER" '[
   {text: "Smoke reply one.", delay: $hold},
   {text: "Smoke reply two."},
   {tool: "run_commands", args: {commands: [$cmd]}},
-  {text: "Command done."}]' >"$ROOT/stub/script.json"
+  {text: "Hub reply."},
+  {text: "Identity reply one."},
+  {text: "Identity reply clear."},
+  {text: "Identity reply fork."},
+  {tool: "spawn_agent", args: {systemPrompt: "You are a helper.", task: "Say done."}},
+  {text: "Subagent says done.", unless_tool: "team_status"},
+  {text: "Parent saw the subagent."}]' >"$ROOT/stub/script.json"
 : >"$ROOT/stub/requests.jsonl"
 python3 -I "$SCRIPT_DIR/model-stub" --port "$STUB_PORT" --script "$ROOT/stub/script.json" \
   --log "$ROOT/stub/requests.jsonl" 2>"$ROOT/stub/stub.err" &
@@ -291,10 +306,11 @@ pk plugin enable dev.runtime.cline --digest "${digest#sha256:}" >/dev/null
 pk plugin select dev.runtime.cline --digest "${digest#sha256:}" >/dev/null
 pk plugin doctor | grep -q 'No problems found' || die "plugin doctor reports a problem"
 
-# Profiles carry what the harness decides: the isolated config home, the hub
-# port and discovery path, and sandbox mode, which keeps every session in the
-# TUI process (the development recipe of the README). `cline-approve` also
-# turns Cline's approval on, as the approval scenario needs.
+# Profiles carry only what the harness decides: the isolated config home and
+# data root, the hub port and discovery path. Local placement comes from the
+# package's handler: core refuses a launch whose environment sets
+# CLINE_SANDBOX or CLINE_SANDBOX_DATA_DIR, so none is set here. `cline-approve`
+# also turns Cline's approval on, as the approval scenario needs.
 profile() { # <name> <args toml>
   cat >"$HOME_DIR/.config/pohunek/agents/$1.toml" <<EOF
 base = "cline"
@@ -305,8 +321,6 @@ args = $2
 [env]
 CLINE_DIR = "$CLINE_DIR_PATH"
 CLINE_DATA_DIR = "$CLINE_DATA"
-CLINE_SANDBOX = "1"
-CLINE_SANDBOX_DATA_DIR = "$CLINE_DATA"
 CLINE_HUB_PORT = "$HUB_PORT"
 CLINE_HUB_DISCOVERY_PATH = "$HUB_DISCOVERY"
 EOF
@@ -314,13 +328,69 @@ EOF
 }
 profile cline-local '[]'
 profile cline-approve '["--auto-approve", "false"]'
+if grep -q CLINE_SANDBOX "$HOME_DIR"/.config/pohunek/agents/*.toml; then die "a profile sets a CLINE_SANDBOX variable"; fi
+
+# --- foreign hooks, integration install ------------------------------------------
+# Two observer hooks that are not Pohunek's: Cline runs a file named after an
+# event with no suffix as well as `<event>.sh`, so they run beside the reporter
+# and are not a name collision of the install. Each turn appends the
+# process chain above the hook, CLINE_SANDBOX and the session id it carries.
+# They print nothing, so Cline reads no control output from them.
+HOOK_LOG="$ROOT/hooklog.txt"
+HOOKS_DIR="$CLINE_DIR_PATH/hooks"
+mkdir -p "$HOOKS_DIR"
+: >"$HOOK_LOG"
+for ev in TaskResume TaskComplete; do
+  cat >"$HOOKS_DIR/$ev" <<OBSERVER
+#!/bin/bash
+payload="\$(cat)"
+chain=""
+p="\$PPID"
+while [ -n "\$p" ] && [ "\$p" -gt 1 ]; do
+  chain="\$chain \$p"
+  p="\$(awk '/^PPid:/ {print \$2}' "/proc/\$p/status" 2>/dev/null)"
+done
+root="\$(printf '%s' "\$payload" | jq -r '.sessionContext.rootSessionId // empty')"
+printf '%s sandbox=%s root=%s chain=%s\n' "$ev" "\${CLINE_SANDBOX:-}" "\$root" "\$chain" >>"$HOOK_LOG"
+OBSERVER
+  chmod +x "$HOOKS_DIR/$ev"
+done
+foreign_sums() { (cd "$HOOKS_DIR" && sha256sum ./TaskResume ./TaskComplete); }
+foreign_before="$(foreign_sums)"
+REPORTER_EVENTS=(TaskStart TaskResume TaskComplete TaskError TaskCancel SessionShutdown)
+integration_json() { # <subcommand>
+  pk integration "$1" --agent cline --profile cline-local --json
+}
+install_out="$(integration_json install)" || die "integration install failed: $install_out"
+for ev in "${REPORTER_EVENTS[@]}"; do
+  [[ -f "$HOOKS_DIR/$ev.sh" ]] || die "the reporter $ev.sh is not installed in $HOOKS_DIR"
+  grep -q '^# POHUNEK_INTEGRATION_ID=cline$' "$HOOKS_DIR/$ev.sh" || die "$ev.sh lacks the ownership marker"
+done
+[[ "$(foreign_sums)" == "$foreign_before" ]] || die "install changed a foreign hook"
+status_out="$(integration_json status)" || die "integration status failed: $status_out"
+doctor_out="$(integration_json doctor)" || die "integration doctor failed: $doctor_out"
+[[ "$(foreign_sums)" == "$foreign_before" ]] || die "status or doctor changed a foreign hook"
+# Outside a Pohunek session (no POHUNEK_ENV) the reporter exits 0 at once and
+# prints nothing, with or without a payload.
+for ev in "${REPORTER_EVENTS[@]}"; do
+  outside="$(printf '{"hookName":"agent_resume","sessionContext":{"rootSessionId":"x"}}' |
+    env -i PATH="$AGENT_PATH" CLINE_SANDBOX=1 sh "$HOOKS_DIR/$ev.sh" 2>&1)" || die "$ev.sh exited non-zero outside Pohunek"
+  [[ -z "$outside" ]] || die "$ev.sh printed outside Pohunek: $outside"
+done
+log "install: the six reporter files carry the ownership marker and are silent no-ops outside Pohunek, foreign hooks unchanged"
 
 activity_of() { pk session list --json | jq -r --arg n "$1" '.ok[] | select(.name == $n) | .activity // "none"'; }
 session_id() { pk session list --json | jq -r --arg n "$1" '.ok[] | select(.name == $n) | .id'; }
 root_pid_of() { pk session list --json | jq -r --arg n "$1" '.ok[] | select(.name == $n) | .pid'; }
 native_of() { pk session list --json | jq -r --arg n "$1" '.ok[] | select(.name == $n) | .native_session_id // empty'; }
 want_activity() { [[ "$(activity_of "$1")" == "$2" ]]; }
-screen_has() { pk session screen "$1" | grep -q -- "$2"; }
+# The screen is read to the end before grep, so an early `grep -q` exit cannot
+# break the pipe under `pipefail`.
+screen_has() {
+  local screen
+  screen="$(pk session screen "$1")" || return 1
+  grep -q -- "$2" <<<"$screen"
+}
 cmdline_of() { tr '\0' ' ' <"/proc/$1/cmdline"; }
 assert_no_hub() {
   if pgrep -f -- '--cline-hub-daemon' >/dev/null 2>&1; then die "$1: a Cline hub daemon is running"; fi
@@ -331,7 +401,7 @@ pk session new --agent cline-local --cwd "$WS" --name bare --yes >/dev/null
 wait_for "the bare session to read idle" want_activity bare idle
 bare_id="$(session_id bare)"
 bare_pid="$(root_pid_of bare)"
-for name in CLINE_NO_AUTO_UPDATE=1 CLINE_DISABLE_CLINE_PASS_NOTICE=1; do
+for name in CLINE_NO_AUTO_UPDATE=1 CLINE_DISABLE_CLINE_PASS_NOTICE=1 CLINE_SANDBOX=1 "CLINE_SANDBOX_DATA_DIR=$CLINE_DATA"; do
   tr '\0' '\n' <"/proc/$bare_pid/environ" | grep -qx "$name" || die "$name is not in the launch environment"
 done
 if pk session screen "$bare_id" | grep -Eq 'Try ClinePass|Cline Desktop|Press Enter to open'; then
@@ -383,12 +453,12 @@ wait_for "the reply after resume" reply_two
 wait_for "the resumed session to read idle again" want_activity turn idle
 [[ "$(native_of turn)" == "$turn_native" ]] || die "the resumed session changed its native reference"
 pk session stop "$turn_id" >/dev/null
-mv "$manifest" "$manifest.away"
-refusal="$(pk session resume "$turn_id" --json || true)"
-mv "$manifest.away" "$manifest"
+# The bare session never took a prompt, so Cline wrote no <id>/<id>.json for
+# its assigned reference and no hook reported it.
+refusal="$(pk session resume "$bare_id" --json || true)"
 [[ "$(jq -r '.err.code' <<<"$refusal")" == agent_native_reference_missing ]] ||
-  die "resume without the session manifest was not refused: $refusal"
-log "D6: resume relaunched cline --id $turn_native and showed the conversation; resume without <id>/<id>.json was refused"
+  die "resume of a session without a manifest was not refused: $refusal"
+log "D6: resume relaunched cline --id $turn_native and showed the conversation; a session without <id>/<id>.json was refused"
 
 # --- D5: blocked on approval, plain text refused ---------------------------------
 pk session new --agent cline-approve --cwd "$WS" --name approval --yes >/dev/null
@@ -407,6 +477,118 @@ approval_seen || die "the approval box was answered without the operator"
 want_activity approval blocked || die "the approval session left blocked"
 pk session stop "$approval_id" >/dev/null
 log "D5: the stub run_commands read blocked under approval, plain text was refused (session_input_blocked), the command did not run"
+
+assert_no_hub "after the sessions without a hub"
+log "P2-D3: no Cline hub daemon existed before, during or after any launch of the sessions above"
+
+# --- P2-D1: a compatible hub is running; the launch stays local -------------------
+hub_pids() { pgrep -f -- '--cline-hub-daemon' | sort | tr '\n' ' ' || true; }
+ancestors_of() { # <pid>: the pids above it, nearest first
+  local p="$1" out=""
+  while [[ -n "$p" && "$p" -gt 1 ]]; do
+    out="$out $p"
+    p="$(awk '/^PPid:/ {print $2}' "/proc/$p/status" 2>/dev/null)"
+  done
+  printf '%s' "$out"
+}
+(cd "$WS" && cline_env cline hub start --port "$HUB_PORT" --json) >"$ROOT/stage/hub-start.json" 2>&1 ||
+  die "cline hub start failed: $(tail -n 3 "$ROOT/stage/hub-start.json")"
+hub_up() { [[ -n "$(hub_pids)" ]]; }
+wait_for "the isolated Cline hub" hub_up
+hubs_before="$(hub_pids)"
+hook_lines_before="$(wc -l <"$HOOK_LOG")"
+pk session new --agent cline-local --cwd "$WS" --name hubhost --input "hub turn" \
+  --input-ack-timeout-ms "$INPUT_ACK_MS" --yes --json >"$ROOT/stage/hubhost-new.json"
+hubhost_id="$(jq -r '.ok.id' "$ROOT/stage/hubhost-new.json")"
+hubhost_pid="$(root_pid_of hubhost)"
+hub_reply() { screen_has "$hubhost_id" 'Hub reply'; }
+wait_for "the reply of the session beside the hub" hub_reply
+hook_logged() { # <event> <first line number to look at>
+  tail -n "+$2" "$HOOK_LOG" | grep -q "^$1 "
+}
+wait_for "the foreign TaskComplete hook of the hub-side session" hook_logged TaskComplete "$((hook_lines_before + 1))"
+[[ "$(hub_pids)" == "$hubs_before" ]] || die "the launch changed the set of Cline hub daemons: [$hubs_before] -> [$(hub_pids)]"
+new_hook_lines="$(tail -n "+$((hook_lines_before + 1))" "$HOOK_LOG")"
+[[ -n "$new_hook_lines" ]] || die "no hook ran for the session beside the hub"
+while IFS= read -r line; do
+  [[ "$line" == *" sandbox=1 "* ]] || die "a hook of the session beside the hub ran without CLINE_SANDBOX=1: $line"
+  [[ " ${line##*chain=} " == *" $hubhost_pid "* ]] || die "a hook is not below the TUI process $hubhost_pid: $line"
+done <<<"$new_hook_lines"
+for pid in $hubs_before; do
+  [[ " $(ancestors_of "$pid") " != *" $hubhost_pid "* ]] || die "the hub daemon $pid runs below the session"
+done
+wait_for "the hub-side session to read idle" want_activity hubhost idle
+placement_outcome="$(pk session inspect "$hubhost_id" --json | jq -r '.ok.placement.outcome')"
+[[ "$placement_outcome" == clean ]] || die "core reports placement '$placement_outcome' for the session beside the hub"
+pk session stop "$hubhost_id" >/dev/null
+[[ "$(hub_pids)" == "$hubs_before" ]] || die "stopping the session changed the set of Cline hub daemons"
+log "P2-D1: with a compatible hub running ([${hubs_before% }]) the launch ran local: every hook below the TUI ($hubhost_pid) with CLINE_SANDBOX=1, placement clean, hub set unchanged during and after the session"
+(cd "$WS" && cline_env cline hub stop) >"$ROOT/stage/hub-stop.txt" 2>&1 || die "cline hub stop failed: $(tail -n 3 "$ROOT/stage/hub-stop.txt")"
+hub_gone() { [[ -z "$(hub_pids)" ]]; }
+wait_for "the isolated Cline hub to end" hub_gone
+
+# --- P2-D2: reported reference follows /clear and /fork; a subagent is reported ------
+pk session new --agent cline-local --cwd "$WS" --name ident --input "identity turn" \
+  --input-ack-timeout-ms "$INPUT_ACK_MS" --yes --json >"$ROOT/stage/ident-new.json"
+ident_id="$(jq -r '.ok.id' "$ROOT/stage/ident-new.json")"
+ident_assigned="$(native_of ident)"
+ident_reply() { screen_has "$ident_id" "$1"; }
+last_root() { grep -o 'root=[^ ]*' "$HOOK_LOG" | tail -n 1 | cut -d= -f2; }
+native_is() { [[ "$(native_of ident)" == "$1" ]]; }
+wait_for "the first identity reply" ident_reply 'Identity reply one'
+wait_for "the identity session to read idle" want_activity ident idle
+wait_for "the reported reference" native_is "$(last_root)"
+[[ "$(last_root)" == "$ident_assigned" ]] || die "the first turn reported $(last_root), not the launch id $ident_assigned"
+pk session inspect "$ident_id" --json >"$ROOT/stage/ident-inspect-1.json"
+log "P2-D2: after one stub turn the reference is the id the TUI reported ($ident_assigned)"
+
+pk session input "$ident_id" "/clear" >/dev/null
+wait_for "the cleared screen" ident_reply 'What can I do for you'
+pk session input "$ident_id" "after clear" >/dev/null
+wait_for "the reply after /clear" ident_reply 'Identity reply clear'
+wait_for "the session to read idle after /clear" want_activity ident idle
+cleared="$(last_root)"
+[[ -n "$cleared" && "$cleared" != "$ident_assigned" ]] || die "/clear did not start a new session id (hook root: $cleared)"
+wait_for "the reference to follow /clear" native_is "$cleared"
+log "P2-D2: /clear re-bound the reference $ident_assigned -> $cleared"
+
+pk session input "$ident_id" "/fork" >/dev/null
+wait_for "the fork confirmation" ident_reply 'Create a fork of the current'
+# `session input` is refused while the confirmation shows (the descriptor's
+# refuse_while_blocked), so the operator's own route answers it: Enter through
+# `pohunek attach` with a piped stdin.
+printf '\r' | pk attach "$ident_id" >/dev/null 2>&1 || true
+wait_for "the fork notice" ident_reply 'Forked into new session'
+pk session input "$ident_id" "after fork" >/dev/null
+wait_for "the reply after /fork" ident_reply 'Identity reply fork'
+wait_for "the session to read idle after /fork" want_activity ident idle
+forked="$(last_root)"
+[[ -n "$forked" && "$forked" != "$cleared" ]] || die "/fork did not start a new session id (hook root: $forked)"
+wait_for "the reference to follow /fork" native_is "$forked"
+log "P2-D2: /fork re-bound the reference $cleared -> $forked"
+
+pk session input "$ident_id" "spawn a helper" >/dev/null
+wait_for "the parent's reply after the subagent" ident_reply 'Parent saw the subagent'
+wait_for "the session to read idle after the subagent turn" want_activity ident idle
+subagent_reported() {
+  local inspected
+  inspected="$(pk session inspect "$ident_id" --json)" || return 1
+  jq -e '[.ok.subagents[]? | select(.provider == "cline" and .lifecycle == "completed" and (.parent_id | type == "string"))] | length == 1' \
+    >/dev/null <<<"$inspected"
+}
+wait_for "the completed subagent to be reported" subagent_reported
+assert_no_hub "while the identity session ran"
+log "P2-D2: the subagent turn was reported (one cline subagent with a parent id, lifecycle completed)"
+pk session stop "$ident_id" >/dev/null
+
+# --- P2-D4: uninstall removes only the reporter; the foreign hooks stay byte-identical
+uninstall_out="$(integration_json uninstall)" || die "integration uninstall failed: $uninstall_out"
+for ev in "${REPORTER_EVENTS[@]}"; do
+  [[ ! -e "$HOOKS_DIR/$ev.sh" ]] || die "uninstall left $ev.sh"
+done
+[[ -d "$HOOKS_DIR" ]] || die "uninstall removed the hooks directory"
+[[ "$(foreign_sums)" == "$foreign_before" ]] || die "uninstall changed a foreign hook"
+log "P2-D4: install, status, doctor and uninstall left the foreign hooks byte-identical; uninstall removed the six reporter files"
 
 assert_no_hub "end of run"
 log "stub served: $(jq -r '[.reply] | @csv' "$ROOT/stub/requests.jsonl" | tr '\n' ' ')"

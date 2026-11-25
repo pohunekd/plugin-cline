@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use package::directory::build_directory_archive;
 use package::{read_archive, Limits};
 use pohunek_daemon::agent::host::{
-    definition_from_archive, InputReadiness, LaunchProgram, RuntimeDefinition,
+    definition_from_archive, HandlerId, InputReadiness, LaunchProgram, RuntimeDefinition,
 };
 use pohunek_daemon::agent::NativeReferenceStrategy;
 use pohunek_daemon::detect::{DetectionConfig, Detector, DetectorConfig, Manifest};
@@ -92,7 +92,7 @@ fn the_descriptor_declares_the_launch_contract_of_the_captured_release() {
     );
     assert_eq!(
         format!("{:?}", definition.native()),
-        r#"Some(NativeSessionLaunch { reference_kind: Id, resume_args: NativeArgs([Literal("--id"), Reference]), fork_args: None, assigned: Some(AssignedReference { launch_args: NativeArgs([Literal("--id"), Reference]), existence: File(FileExistence { root_env: Some("CLINE_DIR"), root_home: Some(".cline"), dir: Some("data/sessions"), file_name: "{reference}.json", name_match: Exact, max_depth: 1, store: Some(StoreEnv { name: "CLINE_DATA_DIR", max_depth: 2 }), relocating_args: ["--data-dir", "--config"], relocating_settings: [] }), assign_fork: false }) })"#,
+        r#"Some(NativeSessionLaunch { reference_kind: Id, resume_args: NativeArgs([Literal("--id"), Reference]), assigned: Some(AssignedReference { launch_args: NativeArgs([Literal("--id"), Reference]), existence: File(FileExistence { root_env: Some("CLINE_DIR"), root_home: Some(".cline"), dir: Some("data/sessions"), file_name: "{reference}.json", name_match: Exact, max_depth: 1, store: Some(StoreEnv { name: "CLINE_DATA_DIR", max_depth: 2 }), relocating_args: ["--data-dir", "--config"], relocating_settings: [] }) }) })"#,
         "core generates the id, `--id` assigns and resumes it, recovery needs <id>/<id>.json"
     );
     let home = definition
@@ -103,6 +103,20 @@ fn the_descriptor_declares_the_launch_contract_of_the_captured_release() {
         ("CLINE_DIR", None, ".cline")
     );
     assert!(definition.manifest().program_status().is_none());
+    assert_eq!(
+        definition.integration_handler().map(HandlerId::as_str),
+        Some("cline-hook-v1"),
+        "the handler keeps launches local and installs the reporter hooks"
+    );
+    assert_eq!(
+        definition.hook_schema().map(|schema| schema.id),
+        Some("identity-subagent-v1")
+    );
+    let debug = format!("{definition:?}");
+    assert!(
+        debug.contains("keep_local_handler: true") || debug.contains("KeepLocalHandler"),
+        "the handler-backed in-process placement is declared: {debug}"
+    );
 }
 
 #[test]
@@ -126,11 +140,11 @@ fn the_version_probe_accepts_the_captured_banner_and_the_supported_range_only() 
         release.lines().any(|l| l == format!("release={version}")),
         "the probed release {version} is the locked release"
     );
-    for accepted in ["3.0.74", "3.0.75", "3.9.9"] {
+    for accepted in ["3.0.74", "3.0.75", "3.9.9", "4.0.0", "10.2.3"] {
         assert!(policy.check_output(accepted).is_ok(), "{accepted}");
     }
-    // The upper bound is a stopgap for the open-ended range (zajca/pohunek#1963).
-    for refused in ["3.0.73", "4.0.0", "3.0.74-rc.1", "Cline 3.0.74", ""] {
+    // The range is open above `min`; older releases, suffixes and banners are refused.
+    for refused in ["3.0.73", "3.0.74-rc.1", "Cline 3.0.74", ""] {
         assert!(policy.check_output(refused).is_err(), "{refused:?}");
     }
 }
@@ -207,6 +221,8 @@ fn detector_for(
             manifest: Some(manifest),
             input_readiness: readiness,
             launch_name: None,
+            runtime_version: None,
+            gate_waived: false,
         },
     )
 }

@@ -18,12 +18,14 @@ cmdline = [
 ]
 
 # Dialogs that replace the composer read `after_last_horizontal_rule`: the text
-# below the last full-width rule. With the composer drawn that is only the
-# footer, so a transcript that quotes a dialog phrase stays unblocked, and a
-# dialog draws no rule below its own buttons. Text the model controls (the
-# command in the approval box, the question and its options) can carry a line
-# of U+2500 characters; the rules therefore match the static text at the
-# bottom of the dialog, below anything the model prints, and fail closed.
+# below the last rule line (a line of U+2500 characters, or one led by at least
+# three of them). With the composer drawn that is only the footer, so a
+# transcript that quotes a dialog phrase stays unblocked. Text the model
+# controls (the command in the approval box, the question and its options) can
+# carry such a line: `approval` matches its buttons, which sit below the
+# command, and `question` matches its title or its last entry. A rule line in
+# the question text together with a clipped option list is the one case that
+# is not matched (README, Limits).
 
 # `Cline needs permission` / `Approve tool call?` / the command / the buttons
 # `[y] Approve   [n] Deny`. The buttons sit below the command, so a rule line
