@@ -358,8 +358,10 @@ self_test() {
   # A screen with one word changed, a hook payload without a key and a hub
   # daemon in a process tree, each in the copy of a different release.
   local screen hook tree
-  screen="$(cd "$COMMITTED" && compgen -G 'screens/approval/*.txt' | head -n 1)"
-  hook="$(cd "$COMMITTED" && compgen -G 'hooks/*/001-*.json' | head -n 1)"
+  # compgen -G lists in directory order, which differs between hosts; the
+  # fixtures are named so every host picks the same ones.
+  screen="screens/approval/120.txt"
+  hook="$(cd "$COMMITTED" && find hooks -name '*.json' | sort | sed -n 1p)"
   tree="install/process-sandbox-tui.txt"
   [[ -n "$screen" && -n "$hook" && -f "$COMMITTED/$tree" ]] || die "self test: the committed evidence lacks its fixtures"
   sed 's/Approve/Allow/' "$COMMITTED/$screen" >"$work/fresh/$screen"
