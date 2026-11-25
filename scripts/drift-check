@@ -356,7 +356,7 @@ self_test() {
   ((rc == 0)) || die "self test: an unchanged copy reported a difference (rc $rc)"
 
   # A screen with one word changed, a hook payload without a key and a hub
-  # daemon in a process tree, each in the copy of a different release.
+  # daemon in a process tree.
   local screen hook tree
   # compgen -G lists in directory order, which differs between hosts; the
   # fixtures are named so every host picks the same ones.
@@ -367,15 +367,17 @@ self_test() {
   sed 's/Approve/Allow/' "$COMMITTED/$screen" >"$work/fresh/$screen"
   jq 'del(.payload.timestamp)' "$COMMITTED/$hook" >"$work/fresh/$hook"
   printf '.cline: x --cline-hub-daemon --port 1\n' >>"$work/fresh/$tree"
-  sed 's/^release=.*/release=9.9.9/' "$COMMITTED/RELEASE" >"$work/fresh/RELEASE"
   rc=0
   "$SCRIPT_DIR/drift-check" --committed "$COMMITTED" --fresh "$work/fresh" --report "$report" || rc=$?
   ((rc == 1)) || die "self test: the changed copy did not report a difference (rc $rc)"
-  grep -q '^<!-- drift-release: 9.9.9 -->$' "$report" || die "self test: the report names no release"
+  grep -qxF "<!-- drift-release: $(release_field "$COMMITTED" release) -->" "$report" || die "self test: the report names no release"
   screen="${screen#screens/}"
   grep -qxF "screens ${screen%.txt}" "$report" || die "self test: the changed screen is not reported"
   hook="${hook#hooks/}"
   grep -qxF "hooks ${hook%/*}" "$report" || die "self test: the changed hook payload is not reported"
+  # Exactly the three intended differences: a spurious one (a release
+  # placeholder that fails to match, say) must not pass.
+  grep -q 'in 3 place(s)\.$' "$report" || die "self test: the report does not hold exactly three differences"
   grep -qxF "process $tree" "$report" || die "self test: the hub daemon line is not reported"
   printf 'drift-check: self test passed\n' >&2
 }

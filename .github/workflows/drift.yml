@@ -3,8 +3,9 @@ name: Drift
 # Weekly capture of the newest Cline release against the loopback model stub,
 # compared with the committed evidence in compat/. A difference opens or
 # updates the one drift issue; compat/ and the version lock are never edited.
-# No secret and no model: the capture runs in a namespace with only a loopback
-# interface, and the only network use is the npm registry fetch of the release.
+# No secret and no model: the capture step runs the CLI in a namespace with
+# only a loopback interface. The job itself reaches the npm registry (the
+# release), apt, rustup and the cargo git fetch of core (--detect).
 
 on:
   schedule:
@@ -87,8 +88,13 @@ jobs:
           scripts/drift-check --fresh "$RUNNER_TEMP/fresh" --stage "$RUNNER_TEMP/capture/stage" \
             --release "$RELEASE" --detect --report "$RUNNER_TEMP/out/report.md" || rc=$?
           if [[ -f "$RUNNER_TEMP/out/report.md" ]]; then
-            # A fenced block keeps the captured text inert in the summary.
-            { echo '````text'; cat "$RUNNER_TEMP/out/report.md"; echo '````'; } >>"$GITHUB_STEP_SUMMARY"
+            # The issue body (report inside a computed code fence) is also the
+            # summary; a report without a difference is shown as it is.
+            if ((rc == 1)); then
+              scripts/drift-issue --report "$RUNNER_TEMP/out/report.md" --body-only >>"$GITHUB_STEP_SUMMARY"
+            else
+              cat "$RUNNER_TEMP/out/report.md" >>"$GITHUB_STEP_SUMMARY"
+            fi
           fi
           case "$rc" in
             0) echo "drift=false" >>"$GITHUB_OUTPUT" ;;
@@ -96,12 +102,16 @@ jobs:
             *) exit "$rc" ;;
           esac
       - name: Upload the report and the fresh evidence
+        # Also after a failed run: the staged files of a missed step are the
+        # evidence for the difference.
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: drift
           path: |
             ${{ runner.temp }}/out/report.md
             ${{ runner.temp }}/fresh
+            ${{ runner.temp }}/capture/stage
           retention-days: 30
 
   issue:

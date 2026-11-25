@@ -119,7 +119,7 @@ output with `compat/`:
 
 - **screens**: the text of every scenario and width;
 - **hooks**: the shape of every hook payload (key paths and value types, not
-  values), the event sequence and the env names;
+  values), the events and their counts (not their order) and the env names;
 - **process**: every process tree and after-session listing, and the number of
   `--cline-hub-daemon` processes in each;
 - **help**: the `--help` text of every command;

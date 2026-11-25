@@ -39,7 +39,9 @@ jobs:
       - name: drift check self test
         # An identical capture reports nothing; a changed screen, hook
         # payload shape or hub daemon line is reported by scenario.
-        run: scripts/drift-check --self-test
+        run: |
+          scripts/drift-check --self-test
+          scripts/drift-issue --self-test
       - name: evidence carries no credential or home path
         # The kit never signs in and never copies providers.json or a hub
         # discovery record; a credential-shaped string in compat/ is a bug.

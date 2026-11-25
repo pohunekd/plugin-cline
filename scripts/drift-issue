@@ -10,7 +10,9 @@
 set -euo pipefail
 
 TITLE="Cline drift: the newest release differs from the committed evidence"
-LABEL="cline-drift"
+# DRIFT_ISSUE_LABEL points a --dry-run lookup at another label (to see the
+# update path against an existing issue); the workflow never sets it.
+LABEL="${DRIFT_ISSUE_LABEL:-cline-drift}"
 LABEL_COLOR="D93F0B"
 LABEL_DESCRIPTION="A scheduled capture of the newest Cline release differs from compat/"
 # GitHub rejects an issue body above 65536 characters.
@@ -19,10 +21,14 @@ MAX_BODY_CHARS=60000
 usage() {
   cat <<'EOF'
 usage: scripts/drift-issue --repo OWNER/REPO --report FILE [--dry-run]
+       scripts/drift-issue --report FILE --body-only
+       scripts/drift-issue --self-test
 
   --repo OWNER/REPO  the repository that holds the issue
   --report FILE      the report written by scripts/drift-check
-  --dry-run          look up the open issue and print what would happen
+  --dry-run          look up the open issue, print the body and what would happen
+  --body-only        print the issue body (no gh); also used for the job summary
+  --self-test        check the body of an oversized report (no gh)
 EOF
 }
 
@@ -55,25 +61,67 @@ body() {
   # inside a code fence longer than any backtick run in it: no markup, mention
   # or link in it is live.
   local fence
-  fence="$(grep -o '`*' "$REPORT" | awk '{ if (length($0) > m) m = length($0) } END { n = (m < 3 ? 3 : m + 1); s = ""; for (i = 0; i < n; i++) s = s "`"; print s }')"
+  fence="$(awk '{ while (match($0, /`+/)) { if (RLENGTH > m) m = RLENGTH; $0 = substr($0, RSTART + RLENGTH) } }
+    END { n = (m < 3 ? 3 : m + 1); s = ""; for (i = 0; i < n; i++) s = s "`"; print s }' "$REPORT")"
   {
     printf '<!-- drift-release: %s -->\n' "$release"
     printf 'Cline %s differs from the committed evidence.\n\n' "$release"
     printf '%s text\n' "$fence"
-    # The marker line is re-emitted above from the validated release.
-    grep -v '^<!-- drift-release: ' "$REPORT" | head -c "$MAX_BODY_CHARS"
-    printf '\n%s\n\n%s' "$fence" "$run"
+    # The marker line is re-emitted above from the validated release. The
+    # report is cut at a line boundary (awk reads the file, so no pipe closes
+    # early) and says so, because GitHub rejects a body above its limit.
+    LC_ALL=C awk -v max="$MAX_BODY_CHARS" '
+      index($0, "<!-- drift-release: ") == 1 { next }
+      { n += length($0) + 1; if (n > max) { cut = 1; exit } print }
+      END { if (cut) print "[truncated at " max " bytes; the full report is in the drift workflow artifact]" }' "$REPORT"
+    printf '%s\n\n%s' "$fence" "$run"
     # shellcheck disable=SC2016 # the backticks are markdown, not a substitution
     printf 'The scheduled capture compared a fresh `scripts/capture` run with `compat/`. It edits nothing: review the differences, then follow "Updating to a new Cline release" in the README (capture, review, commit the evidence, move the lock).\n'
   }
 }
 
+# self_test: the body of an oversized report stays below GitHub's limit, says
+# it was cut, ends on a whole line and keeps its code fence closed; a report
+# without any backtick also gets a fence.
+self_test() {
+  local report out lines
+  SELF_TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/drift-issue-selftest.XXXXXX")"
+  trap 'rm -rf "$SELF_TEST_DIR"' EXIT
+  local dir="$SELF_TEST_DIR"
+  report="$dir/report.md"
+  out="$dir/body.md"
+  awk 'BEGIN {
+    print "<!-- drift-release: 1.2.3 -->"
+    print "Cline 1.2.3 differs from the committed evidence (release 1.2.2) in 1 place(s)."
+    print "\nscreens big/120"
+    for (i = 0; i < 5000; i++) print "    + line " i " @octocat ```` <b>x</b> \303\244\303\244\303\244 padding padding padding"
+  }' >"$report"
+  "$0" --report "$report" --body-only >"$out" || die "self test: the oversized report failed (rc $?)"
+  (($(wc -c <"$out") < 65536)) || die "self test: the body is over GitHub's limit"
+  grep -q '^\[truncated at ' "$out" || die "self test: the cut is not announced"
+  lines="$(grep -c '^`\{5,\}' "$out" || true)"
+  [[ "$lines" == 2 ]] || die "self test: the code fence is not opened and closed once ($lines fence lines)"
+  grep -q 'padding$' <(grep -B1 '^\[truncated' "$out") || die "self test: the cut is not at a line boundary"
+  printf '<!-- drift-release: 1.2.3 -->\nCline 1.2.3 differs from the committed evidence.\n\nscreens a/1\n    no backticks here\n' >"$report"
+  "$0" --report "$report" --body-only >"$out" || die "self test: a report without backticks failed (rc $?)"
+  [[ "$(grep -c '^```' "$out" || true)" == 2 ]] || die "self test: no fence around a report without backticks"
+  log "self test passed"
+}
+
 main() {
   REPO=""
   REPORT=""
-  local dry=0 found number marker release count tmp
+  local dry=0 body_only=0 found number marker release count tmp
   while (($# > 0)); do
     case "$1" in
+      --body-only)
+        body_only=1
+        shift
+        ;;
+      --self-test)
+        self_test
+        exit 0
+        ;;
       --repo | --report)
         (($# > 1)) || die "$1 needs a value"
         case "$1" in
@@ -93,16 +141,23 @@ main() {
       *) die "unknown argument: $1" ;;
     esac
   done
-  [[ "$REPO" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || die "--repo OWNER/REPO is required"
   [[ -f "$REPORT" ]] || die "--report FILE is required and must exist"
-  command -v gh >/dev/null 2>&1 || die "missing tool: gh"
-  command -v jq >/dev/null 2>&1 || die "missing tool: jq"
+  if ((body_only == 0)); then
+    [[ "$REPO" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || die "--repo OWNER/REPO is required"
+    command -v gh >/dev/null 2>&1 || die "missing tool: gh"
+    command -v jq >/dev/null 2>&1 || die "missing tool: jq"
+  fi
   release="$(sed -n 's/^<!-- drift-release: \([0-9.]*\) -->$/\1/p' "$REPORT" | head -n 1)"
   [[ -n "$release" ]] || die "the report has no drift-release marker"
   grep -q 'differs from the committed evidence' "$REPORT" || {
     log "the report records no difference; nothing to do"
     exit 0
   }
+
+  if ((body_only == 1)); then
+    body
+    exit 0
+  fi
 
   found="$(open_issues)"
   count="$(grep -c . <<<"$found" || true)"

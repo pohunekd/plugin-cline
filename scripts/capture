@@ -667,11 +667,16 @@ hub_daemons_tree() {
   done
 }
 
-# assert_no_hub <context>: fails when a hub daemon runs in the namespace.
+# assert_no_hub <context>: records a miss when a hub daemon runs in the namespace.
 assert_no_hub() {
   local left
   left="$(hub_daemons)"
-  [[ -z "$left" ]] || die "hub daemon left after $1: $(hub_daemons_tree | redact)"
+  if [[ -n "$left" ]]; then
+    # A leftover hub is a finding about the CLI (the drift workflow reports
+    # it); the daemon is stopped so later steps start clean.
+    miss "hub daemon left after $1: $(hub_daemons_tree | redact | tr '\n' ';')"
+    kill_hubs
+  fi
 }
 
 # kill_hubs: stops the hub daemons this namespace started.
