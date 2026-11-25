@@ -186,8 +186,10 @@ What the package does:
   applies to the reference core assigned at launch. Once a turn's hook has
   reported the session id (the first turn does), core 0.44.0 relaunches without
   looking for the manifest. After a prompt, a moved or deleted session file is
-  therefore not refused as `agent_native_reference_missing`: `cline --id <id>`
-  starts an empty conversation under the old id until core fixes it.
+  therefore not refused as `agent_native_reference_missing`. What `cline --id
+  <id>` then does is unverified (no capture relaunches after a moved manifest;
+  an unknown id starts a session under that id, so an empty conversation is the
+  expected outcome) until core fixes it.
   `scripts/smoke` asserts the refusal only for a session that never took a
   prompt and does not claim the reported case is refused.
 - **Cline 4.x and later are admitted.** `version_probe` is open above
