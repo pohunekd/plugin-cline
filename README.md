@@ -540,8 +540,10 @@ after 3 s: exit code 1, an `error` record `run timed out after 3s` and
   Enter; a shorter delay is untested.
 - **Every Cline release after 3.0.75**: accepted by the version range, never captured.
 - **macOS**: everything; the manager's capture lands as `compat/macos-arm64/`.
-- **Arch package** (`cline-cli`): the host package is 3.0.73, so the `arch`
-  step recorded nothing; its layout under the release is unverified.
+- **Arch package** (`cline-cli`): the `arch` step records the layout only when
+  the host package equals the release; the 3.0.75 package of the capture host is
+  in `install/arch-layout.txt`, and a host without it (the drift runner) records
+  nothing.
 - **Hub dialogs** `Cline Hub update required` and `Cline Hub was updated`:
   source only (`apps/cli/src/tui/root.tsx:660-695`,
   `tui/components/dialogs/hub-update-required.tsx`); a 3.0.73 hub did not
