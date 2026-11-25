@@ -62,6 +62,9 @@ GIT_IDENTITY=(GIT_AUTHOR_NAME=capture GIT_AUTHOR_EMAIL=capture@example.invalid
 LONG_STRING_FILTER='walk(if type == "string" and length > 80 and (startswith("/capture-root") | not) then "<" + (length | tostring) + " chars>" else . end)'
 HOST_FIELD_FILTER='walk(if type == "object" then with_entries(select(.key | test("^pid$|_pid$|^pid_|free_bytes") | not)) else . end)'
 
+# Exit status of a run in which a step missed an expectation.
+EXIT_MISSED=3
+
 STEPS_ALL=(install version onboarding promo turn dialogs hooks errors team history undo hub arch)
 
 export LANG=C.UTF-8 LC_ALL=C.UTF-8
@@ -2041,7 +2044,12 @@ main() {
     fi
     swap_step "$arg" "$stage"
   done
-  ((${#failed[@]} == 0)) || die "steps with missed expectations: ${failed[*]}"
+  # Exit status 3 is reserved for missed expectations (the drift workflow reads
+  # it); every other failure exits 1 or 2.
+  if ((${#failed[@]} > 0)); then
+    log "steps with missed expectations: ${failed[*]}"
+    exit "$EXIT_MISSED"
+  fi
 }
 
 main "$@"

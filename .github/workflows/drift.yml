@@ -67,10 +67,11 @@ jobs:
           scripts/capture --root "$RUNNER_TEMP/capture" --out "$RUNNER_TEMP/fresh" --release "$RELEASE" all 2>&1 | tee "$RUNNER_TEMP/capture.log"
           rc=${PIPESTATUS[0]}
           set -e
-          # Missed expectations are drift; any other failure (install,
-          # integrity, isolation) is a broken run and fails the job.
-          if ((rc != 0)) && ! grep -q '^capture: steps with missed expectations:' "$RUNNER_TEMP/capture.log"; then
-            echo "the capture failed without a missed expectation" >&2
+          # Exit status 3 means missed expectations, which is drift; any other
+          # failure (install, integrity, isolation, hub check) is a broken run
+          # and fails the job.
+          if ((rc != 0 && rc != 3)); then
+            echo "the capture failed (rc $rc) without reporting missed expectations" >&2
             exit 1
           fi
       - name: Toolchain
@@ -85,7 +86,10 @@ jobs:
           rc=0
           scripts/drift-check --fresh "$RUNNER_TEMP/fresh" --stage "$RUNNER_TEMP/capture/stage" \
             --release "$RELEASE" --detect --report "$RUNNER_TEMP/out/report.md" || rc=$?
-          cat "$RUNNER_TEMP/out/report.md" >>"$GITHUB_STEP_SUMMARY"
+          if [[ -f "$RUNNER_TEMP/out/report.md" ]]; then
+            # A fenced block keeps the captured text inert in the summary.
+            { echo '````text'; cat "$RUNNER_TEMP/out/report.md"; echo '````'; } >>"$GITHUB_STEP_SUMMARY"
+          fi
           case "$rc" in
             0) echo "drift=false" >>"$GITHUB_OUTPUT" ;;
             1) echo "drift=true" >>"$GITHUB_OUTPUT" ;;

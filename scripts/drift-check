@@ -68,8 +68,14 @@ die() {
 }
 
 # FINDINGS rows: category TAB scenario TAB detail (the detail carries line
-# breaks as the two characters \n).
+# breaks as LINE_SEP).
 FINDINGS=()
+LINE_SEP=$'\037'
+
+# join_lines: stdin lines joined by LINE_SEP.
+join_lines() {
+  paste -sd"$LINE_SEP"
+}
 
 finding() {
   FINDINGS+=("$1"$'\t'"$2"$'\t'"$3")
@@ -118,10 +124,10 @@ norm_committed() { norm "$OLD_REL" "$OLD_HUB_REL"; }
 norm_fresh() { norm "$NEW_REL" "$NEW_HUB_REL"; }
 
 # delta <file> <file>: the differing lines of two files as `-old` and `+new`,
-# joined by a literal \n and cut at MAX_DIFF_LINES; empty when they are equal.
+# joined by LINE_SEP and cut at MAX_DIFF_LINES; empty when they are equal.
 delta() {
   diff "$1" "$2" | grep -E '^[<>]' | head -n "$MAX_DIFF_LINES" | sed 's/^</-/; s/^>/+/' |
-    paste -sd'\r' | sed 's/\r/\\n/g' || true
+    join_lines || true
 }
 
 # text_drift <area> <scenario> <committed file> <fresh file>: records a
@@ -137,12 +143,13 @@ text_drift() {
 }
 
 # shape <json file>: sorted key paths with value types (array positions
-# collapsed) and the env names as values.
+# collapsed) and the env names as values, each prefixed with the event.
 shape() {
   jq -r '
-    ([paths(scalars) as $p
+    (.event // "") as $e
+    | ([paths(scalars) as $p
       | ($p | map(if type == "number" then "[]" else . end) | join(".")) + ":" + (getpath($p) | type)]
-     + [(.env_names // [])[] | "env_names=" + .]) | unique[]' "$1"
+     + [(.env_names // [])[] | "env_names=" + .]) | unique[] | "\($e) " + .' "$1"
 }
 
 compare_screens() {
@@ -193,7 +200,7 @@ hook_shapes() {
   local file
   for file in "$1"/*.json; do
     [[ -e "$file" ]] || continue
-    shape "$file" | sed "s/^/$(jq -r .event "$file") /"
+    shape "$file"
   done | sort -u
 }
 
@@ -233,6 +240,10 @@ compare_process() {
       finding process "$rel" "missing in the fresh capture"
       continue
     fi
+    if [[ ! -f "$COMMITTED/$rel" ]]; then
+      finding process "$rel" "new file, not in the committed evidence"
+      continue
+    fi
     old="$(hub_daemon_lines "$COMMITTED/$rel")"
     new="$(hub_daemon_lines "$FRESH/$rel")"
     if [[ "$old" != "$new" ]]; then
@@ -240,7 +251,9 @@ compare_process() {
     else
       text_drift process "$rel" "$COMMITTED/$rel" "$FRESH/$rel"
     fi
-  done < <(cd "$COMMITTED" && for g in "${PROCESS_GLOBS[@]}"; do compgen -G "$g" || true; done | sort -u)
+  done < <(for d in "$COMMITTED" "$FRESH"; do
+    (cd "$d" && for g in "${PROCESS_GLOBS[@]}"; do compgen -G "$g" || true; done)
+  done | sort -u)
 }
 
 compare_help() {
@@ -282,7 +295,7 @@ compare_stage() {
   for missed in "$STAGE"/*/MISSED.txt; do
     [[ -e "$missed" ]] || continue
     step="$(basename "$(dirname "$missed")")"
-    finding capture "$step" "$(head -n "$MAX_DIFF_LINES" "$missed" | paste -sd'\r' | sed 's/\r/\\n/g')"
+    finding capture "$step" "$(head -n "$MAX_DIFF_LINES" "$missed" | join_lines)"
   done
 }
 
@@ -301,9 +314,12 @@ run_detect() {
   [[ ! -d "$FRESH/screens" ]] || rm -rf "$work/compat/screens"
   cp -a "$FRESH/." "$work/compat/"
   out="$work/detect.log"
+  # A build or fetch failure is a broken run, not drift: it ends the check.
+  (cd "$work/kit" && CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$work/target}" cargo test --locked --no-run) >"$out" 2>&1 ||
+    die "the kit does not build: $(tail -n 5 "$out" | join_lines | tr "$LINE_SEP" ' ')"
   (cd "$work/kit" && CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$work/target}" cargo test --locked) >"$out" 2>&1 || rc=$?
   if ((rc != 0)); then
-    finding detect "kit/tests/package.rs" "cargo test failed (rc $rc) against the fresh screens:\\n$(grep -E 'FAILED|panicked|failed:|screens:|^  ' "$out" | head -n "$MAX_DETECT_LINES" | paste -sd'\r' | sed 's/\r/\\n/g')"
+    finding detect "kit/tests/package.rs" "cargo test failed (rc $rc) against the fresh screens:${LINE_SEP}$(grep -E 'FAILED|panicked|failed:|screens:|^  ' "$out" | head -n "$MAX_DETECT_LINES" | join_lines)"
   fi
 }
 
@@ -316,20 +332,14 @@ write_report() {
     printf 'Cline %s: no difference from the committed evidence (release %s).\n' "$NEW_REL" "$OLD_REL"
     return 0
   fi
-  printf 'Cline **%s** differs from the committed evidence (release %s) in %s place(s).\n\n' \
+  printf 'Cline %s differs from the committed evidence (release %s) in %s place(s).\n' \
     "$NEW_REL" "$OLD_REL" "$count"
-  printf '| Area | Scenario | Difference |\n|---|---|---|\n'
+  # Plain text: one block per difference, details indented. scripts/drift-issue
+  # publishes it inside a code fence.
   for row in "${FINDINGS[@]}"; do
     IFS=$'\t' read -r area scn detail <<<"$row"
-    # A table cell holds no raw pipe, backtick or line break.
-    detail="${detail//|/\\|}"
-    detail="${detail//\`/\'}"
-    detail="${detail//\\n/<br>}"
-    # A literal @ would notify the account it names.
-    detail="${detail//@/&#64;}"
-    scn="${scn//@/&#64;}"
-    # shellcheck disable=SC2016 # the backticks are markdown, not a substitution
-    printf '| %s | `%s` | %s |\n' "$area" "$scn" "$detail"
+    printf '\n%s %s\n' "$area" "$scn"
+    printf '    %s\n' "${detail//$LINE_SEP/$'\n'    }"
   done
 }
 
@@ -342,7 +352,7 @@ self_test() {
   report="$work/report.md"
   cp -a "$COMMITTED" "$work/fresh"
   rc=0
-  "$SCRIPT_DIR/drift-check" --fresh "$work/fresh" --report "$report" || rc=$?
+  "$SCRIPT_DIR/drift-check" --committed "$COMMITTED" --fresh "$work/fresh" --report "$report" || rc=$?
   ((rc == 0)) || die "self test: an unchanged copy reported a difference (rc $rc)"
 
   # A screen with one word changed, a hook payload without a key and a hub
@@ -357,14 +367,14 @@ self_test() {
   printf '.cline: x --cline-hub-daemon --port 1\n' >>"$work/fresh/$tree"
   sed 's/^release=.*/release=9.9.9/' "$COMMITTED/RELEASE" >"$work/fresh/RELEASE"
   rc=0
-  "$SCRIPT_DIR/drift-check" --fresh "$work/fresh" --report "$report" || rc=$?
+  "$SCRIPT_DIR/drift-check" --committed "$COMMITTED" --fresh "$work/fresh" --report "$report" || rc=$?
   ((rc == 1)) || die "self test: the changed copy did not report a difference (rc $rc)"
   grep -q '^<!-- drift-release: 9.9.9 -->$' "$report" || die "self test: the report names no release"
   screen="${screen#screens/}"
-  grep -qF "| screens | \`${screen%.txt}\`" "$report" || die "self test: the changed screen is not reported"
+  grep -qxF "screens ${screen%.txt}" "$report" || die "self test: the changed screen is not reported"
   hook="${hook#hooks/}"
-  grep -qF "| hooks | \`${hook%/*}\`" "$report" || die "self test: the changed hook payload is not reported"
-  grep -qF "| process | \`$tree\`" "$report" || die "self test: the hub daemon line is not reported"
+  grep -qxF "hooks ${hook%/*}" "$report" || die "self test: the changed hook payload is not reported"
+  grep -qxF "process $tree" "$report" || die "self test: the hub daemon line is not reported"
   printf 'drift-check: self test passed\n' >&2
 }
 
