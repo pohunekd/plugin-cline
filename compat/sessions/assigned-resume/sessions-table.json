@@ -2,8 +2,8 @@
   {
     "session_id": "c0ffee00-0000-4000-8000-000000000001",
     "source": "cli",
-    "started_at": "2026-11-06T00:16:24.606Z",
-    "ended_at": "2026-11-06T00:16:48.032Z",
+    "started_at": "2026-11-25T22:28:46.635Z",
+    "ended_at": "2026-11-25T22:29:10.521Z",
     "exit_code": 0,
     "status": "completed",
     "status_lock": 13,
@@ -25,7 +25,7 @@
     "metadata_json": {
       "sessionHistoryOrigin": {
         "mode": "user",
-        "version": "3.0.74"
+        "version": "3.0.75"
       },
       "git": {
         "branch": "main"
@@ -33,14 +33,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793924186893,
+          "createdAt": 1795645728933,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793924186893,
+            "createdAt": 1795645728933,
             "runCount": 1,
             "kind": "commit"
           }
@@ -64,19 +64,19 @@
         "totalCost": 0
       },
       "terminal_marker": "failed_external_process_exit",
-      "terminal_marker_at": "2026-11-06T00:16:47.977Z",
+      "terminal_marker_at": "2026-11-25T22:29:10.462Z",
       "terminal_marker_source": "stale_session_reconciler"
     },
     "transcript_path": "",
     "hook_path": "",
     "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/c0ffee00-0000-4000-8000-000000000001.messages.json",
-    "updated_at": "2026-11-06T00:16:48.032Z"
+    "updated_at": "2026-11-25T22:29:10.521Z"
   },
   {
-    "session_id": "c0ffee00-0000-4000-8000-000000000001__agent_00000000-0000-4000-8000-000000000002",
+    "session_id": "c0ffee00-0000-4000-8000-000000000001__agent_00000000-0000-4000-8000-000000000003",
     "source": "cli",
-    "started_at": "2026-11-06T00:16:29.139Z",
-    "ended_at": "2026-11-06T00:16:29.187Z",
+    "started_at": "2026-11-25T22:28:50.752Z",
+    "ended_at": "2026-11-25T22:28:50.806Z",
     "exit_code": 0,
     "status": "completed",
     "status_lock": 7,
@@ -91,27 +91,27 @@
     "enable_teams": 1,
     "parent_session_id": "c0ffee00-0000-4000-8000-000000000001",
     "parent_agent_id": "agent_00000000-0000-4000-8000-000000000001",
-    "agent_id": "agent_00000000-0000-4000-8000-000000000002",
-    "conversation_id": "conv_0000000000003_0000000",
+    "agent_id": "agent_00000000-0000-4000-8000-000000000003",
+    "conversation_id": "conv_0000000000005_0000000",
     "is_subagent": 1,
     "prompt": "Say done.",
     "metadata_json": {
       "sessionHistoryOrigin": {
         "mode": "subagent",
-        "version": "3.0.74"
+        "version": "3.0.75"
       },
       "title": "Say done."
     },
     "transcript_path": "",
     "hook_path": "",
-    "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/agent_00000000-0000-4000-8000-000000000002.messages.json",
-    "updated_at": "2026-11-06T00:16:29.187Z"
+    "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/agent_00000000-0000-4000-8000-000000000003.messages.json",
+    "updated_at": "2026-11-25T22:28:50.806Z"
   },
   {
     "session_id": "0000000000002_00000",
     "source": "cli",
-    "started_at": "2026-11-06T00:16:34.024Z",
-    "ended_at": "2026-11-06T00:16:36.017Z",
+    "started_at": "2026-11-25T22:28:55.453Z",
+    "ended_at": "2026-11-25T22:28:57.708Z",
     "exit_code": 0,
     "status": "completed",
     "status_lock": 5,
@@ -120,7 +120,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/hooks/ws",
     "workspace_root": "/capture-root____/s/hooks/ws",
-    "team_name": "team-00003",
+    "team_name": "team-00002",
     "enable_tools": 1,
     "enable_spawn": 1,
     "enable_teams": 1,
@@ -133,7 +133,7 @@
     "metadata_json": {
       "sessionHistoryOrigin": {
         "mode": "user",
-        "version": "3.0.74"
+        "version": "3.0.75"
       },
       "git": {
         "branch": "main"
@@ -141,14 +141,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793924194150,
+          "createdAt": 1795645735598,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793924194150,
+            "createdAt": 1795645735598,
             "runCount": 1,
             "kind": "commit"
           }
@@ -175,13 +175,13 @@
     "transcript_path": "",
     "hook_path": "",
     "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/0000000000002_00000/0000000000002_00000.messages.json",
-    "updated_at": "2026-11-06T00:16:36.017Z"
+    "updated_at": "2026-11-25T22:28:57.708Z"
   },
   {
     "session_id": "0000000000003_00000",
     "source": "cli",
-    "started_at": "2026-11-06T00:16:36.019Z",
-    "ended_at": "2026-11-06T00:16:39.985Z",
+    "started_at": "2026-11-25T22:28:57.801Z",
+    "ended_at": "2026-11-25T22:29:01.901Z",
     "exit_code": 0,
     "status": "completed",
     "status_lock": 5,
@@ -190,7 +190,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/hooks/ws",
     "workspace_root": "/capture-root____/s/hooks/ws",
-    "team_name": "team-00004",
+    "team_name": "team-00003",
     "enable_tools": 1,
     "enable_spawn": 1,
     "enable_teams": 1,
@@ -203,7 +203,7 @@
     "metadata_json": {
       "sessionHistoryOrigin": {
         "mode": "user",
-        "version": "3.0.74"
+        "version": "3.0.75"
       },
       "git": {
         "branch": "main"
@@ -211,14 +211,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793924194150,
+          "createdAt": 1795645735598,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793924194150,
+            "createdAt": 1795645735598,
             "runCount": 1,
             "kind": "commit"
           }
@@ -243,19 +243,19 @@
       },
       "fork": {
         "forkedFromSessionId": "0000000000002_00000",
-        "forkedAt": "2026-11-06T00:16:36.019Z",
+        "forkedAt": "2026-11-25T22:28:57.796Z",
         "source": "cli",
         "checkpoints": {
           "latest": {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793924194150,
+            "createdAt": 1795645735598,
             "runCount": 1,
             "kind": "commit"
           },
           "history": [
             {
               "ref": "0000000000000000000000000000000000000001",
-              "createdAt": 1793924194150,
+              "createdAt": 1795645735598,
               "runCount": 1,
               "kind": "commit"
             }
@@ -266,6 +266,6 @@
     "transcript_path": "",
     "hook_path": "",
     "messages_path": "/capture-root____/s/hooks/fakehome/.cline/data/sessions/0000000000003_00000/0000000000003_00000.messages.json",
-    "updated_at": "2026-11-06T00:16:39.985Z"
+    "updated_at": "2026-11-25T22:29:01.901Z"
   }
 ]

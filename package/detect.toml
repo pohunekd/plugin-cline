@@ -1,6 +1,6 @@
 # Cline CLI activity manifest.
 #
-# Screens come from Cline 3.0.74 (compat/screens). Phrases that no capture
+# Screens come from Cline 3.0.75 (compat/screens). Phrases that no capture
 # shows are marked `unverified`. Cline emits no OSC status record and no BEL;
 # its title carries the prompt text, not a state (compat/terminal/), so every
 # rule reads the screen.

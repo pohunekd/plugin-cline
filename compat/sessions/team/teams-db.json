@@ -18,7 +18,7 @@
       {
         "id": 1,
         "team_name": "c0ffee00-0000-4000-8000-000000000001",
-        "ts": "2026-11-06T00:18:33.780Z",
+        "ts": "2026-11-25T22:30:34.086Z",
         "event_type": "teammate_spawned",
         "payload_json": "<293 chars>",
         "causation_id": null,
@@ -27,7 +27,7 @@
       {
         "id": 2,
         "team_name": "c0ffee00-0000-4000-8000-000000000001",
-        "ts": "2026-11-06T00:18:34.211Z",
+        "ts": "2026-11-25T22:30:34.481Z",
         "event_type": "task_start",
         "payload_json": "{\"type\":\"task_start\",\"agentId\":\"helper\",\"message\":\"Say hello.\"}",
         "causation_id": null,
@@ -36,7 +36,7 @@
       {
         "id": 3,
         "team_name": "c0ffee00-0000-4000-8000-000000000001",
-        "ts": "2026-11-06T00:18:34.211Z",
+        "ts": "2026-11-25T22:30:34.481Z",
         "event_type": "team_mission_log",
         "payload_json": "<197 chars>",
         "causation_id": null,
@@ -45,16 +45,16 @@
       {
         "id": 4,
         "team_name": "c0ffee00-0000-4000-8000-000000000001",
-        "ts": "2026-11-06T00:18:34.211Z",
+        "ts": "2026-11-25T22:30:34.481Z",
         "event_type": "task_end",
-        "payload_json": "<214 chars>",
+        "payload_json": "<213 chars>",
         "causation_id": null,
         "correlation_id": null
       },
       {
         "id": 5,
         "team_name": "c0ffee00-0000-4000-8000-000000000001",
-        "ts": "2026-11-06T00:18:34.211Z",
+        "ts": "2026-11-25T22:30:34.481Z",
         "event_type": "team_mission_log",
         "payload_json": "<201 chars>",
         "causation_id": null,
@@ -63,7 +63,7 @@
       {
         "id": 6,
         "team_name": "c0ffee00-0000-4000-8000-000000000001",
-        "ts": "2026-11-06T00:18:35.117Z",
+        "ts": "2026-11-25T22:30:35.447Z",
         "event_type": "teammate_shutdown",
         "payload_json": "{\"type\":\"teammate_shutdown\",\"agentId\":\"helper\",\"reason\":\"session_stop\"}",
         "causation_id": null,
@@ -73,9 +73,9 @@
     "team_members": [
       {
         "team_name": "c0ffee00-0000-4000-8000-000000000001",
-        "team_id": "t_vzhov0xwk7",
+        "team_id": "t_fxbsnluvtc",
         "members_json": "<185 chars>",
-        "updated_at": "2026-11-06T00:18:35.117Z"
+        "updated_at": "2026-11-25T22:30:35.447Z"
       }
     ],
     "team_mission_log": [
@@ -95,7 +95,7 @@
         "team_name": "c0ffee00-0000-4000-8000-000000000001",
         "state_json": "",
         "teammates_json": "<89 chars>",
-        "updated_at": "2026-11-06T00:18:35.117Z"
+        "updated_at": "2026-11-25T22:30:35.447Z"
       }
     ],
     "team_store_schema_version": [

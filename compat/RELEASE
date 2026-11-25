@@ -1,5 +1,5 @@
-release=3.0.74
-old_release=3.0.73
-cline.integrity=sha512-pCaRaJ6Jx50Urej+BYjpGkpZnFbPDCPsibKEbIjEuVxETXbZ/A1SMij8Thy8FobercevXX6hV7joAzU7OG5lzA==
-@cline/cli-linux-x64.integrity=sha512-Em6BmcqAnwV/UXjdaQY7abeECNzq9O1NjQ7N5a/dOQQpVQlP1S04qmP/xOxgWBh0eS5Mln3z6y3m++DBcYYn3Q==
-@cline/cli-linux-x64.bin.sha256=80ee64f82f895ccc695b95acd18252e00f17186a308257d7b169d444a2b27ef4
+release=3.0.75
+old_release=3.0.74
+cline.integrity=sha512-pPS9viwLrFN+gsepAqPo8lVv5wrjp8CzVB9UbRHwV0RbpvsrRSHxtoHoxMN2tvONuOLvTIWiEYPE3h3KWHqV0g==
+@cline/cli-linux-x64.integrity=sha512-I9uEOAmfphHjr6Bwvq+hzCx9bHAtjH8r7M0KyF4iS6SdzDAIcZxlaLWduAOu8vZ6ws3xkd4vqDU0StpznNmrHw==
+@cline/cli-linux-x64.bin.sha256=f63e3073dcd3b5d045cca6a78a65250b9baecf7d599a1206276255a5fc4f58fe

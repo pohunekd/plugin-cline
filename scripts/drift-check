@@ -105,15 +105,17 @@ scratch_dir() {
 }
 
 # norm <release> <older release>: stdin with the two releases replaced by
-# placeholders, every braille spinner frame by one fixed glyph and the session
-# duration by a marker, so an installed version, a spinner phase or the run
-# time is not a difference.
+# placeholders, every braille spinner frame by one fixed glyph, the session
+# duration by a marker and the process name `node-MainThread` (the main thread
+# name of some node builds) by `node`, so an installed version, a spinner
+# phase, the run time or the node build is not a difference.
 norm() {
   perl -CSD -e '
     my ($release, $older) = @ARGV;
     while (my $line = <STDIN>) {
       $line =~ s/[\x{2800}-\x{28FF}]/\x{283F}/g;
       $line =~ s/^(\s*Duration\s+)\d+\w*/$1<duration>/;
+      $line =~ s/^(\s*)node-MainThread\b/$1node/;
       $line =~ s/\Q$release\E/<release>/g if length $release;
       $line =~ s/\Q$older\E/<older release>/g if length $older;
       print $line;
@@ -384,6 +386,10 @@ self_test() {
       BEGIN { %m = ($ENV{OLD} => $ENV{NEW}); $m{$ENV{OLDER}} = $ENV{OLD} if length $ENV{OLDER};
               $re = join "|", map { quotemeta } keys %m }
       s/($re)/$m{$1}/g'
+  # A node build that names the main thread `node` instead of
+  # `node-MainThread` is not a difference.
+  # shellcheck disable=SC2016 # $1 is a perl variable
+  find "$work/fresh" -type f -path '*/process*' -print0 | xargs -0 perl -pi -e 's/^(\s*)node-MainThread\b/$1node/'
   rc=0
   "$SCRIPT_DIR/drift-check" --committed "$COMMITTED" --fresh "$work/fresh" --report "$report" || rc=$?
   ((rc == 1)) || die "self test: the changed copy did not report a difference (rc $rc)"

@@ -1,7 +1,7 @@
 
  ❯ run a command
 
- ⠋ Thinking... (esc to cancel)
+ ⠙ Thinking... (esc to cancel)
 
 
 

@@ -1,5 +1,5 @@
 {
-  "event": "TaskComplete",
+  "event": "PostToolUse",
   "env_names": [
     "CAPTURE_PROBE",
     "CLINE_BUILD_ENV",
@@ -49,12 +49,12 @@
     "CLINE_SANDBOX_DATA_DIR": "/capture-root____/s/hooks/fakehome/.cline/data",
     "CLINE_SESSION_DATA_DIR": "/capture-root____/s/hooks/fakehome/.cline/data/sessions",
     "CLINE_TEAM_DATA_DIR": "/capture-root____/s/hooks/fakehome/.cline/data/teams",
-    "CLINE_WRAPPER_PATH": "/capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/cline"
+    "CLINE_WRAPPER_PATH": "/capture-root____/prefix/3.0.75/lib/node_modules/cline/bin/cline"
   },
   "ancestors": [
     {
       "comm": ".cline",
-      "args": "/capture-root____/prefix/3.0.74/lib/node_modules/cline/bin/.cline --id c0ffee00-0000-4000-8000-000000000001"
+      "args": "/capture-root____/prefix/3.0.75/lib/node_modules/cline/bin/.cline --id c0ffee00-0000-4000-8000-000000000001"
     },
     {
       "comm": "node-MainThread",
@@ -66,13 +66,13 @@
     },
     {
       "comm": "bash",
-      "args": "<232 chars>"
+      "args": "<266 chars>"
     }
   ],
   "payload": {
     "clineVersion": "",
-    "timestamp": "2026-11-06T00:16:29.179Z",
-    "taskId": "conv_0000000000002_0000000",
+    "timestamp": "2026-11-25T22:28:50.813Z",
+    "taskId": "conv_0000000000001_0000000",
     "sessionContext": {
       "rootSessionId": "c0ffee00-0000-4000-8000-000000000001"
     },
@@ -86,16 +86,39 @@
       "latestGitBranchName": "main"
     },
     "userId": "capture",
-    "agent_id": "agent_00000000-0000-4000-8000-000000000002",
-    "parent_agent_id": "agent_00000000-0000-4000-8000-000000000001",
-    "hookName": "agent_end",
+    "agent_id": "agent_00000000-0000-4000-8000-000000000001",
+    "parent_agent_id": null,
+    "hookName": "tool_result",
     "iteration": 1,
-    "turn": {
-      "outputText": "Sub agent says done.",
-      "status": "completed"
+    "tool_result": {
+      "id": "call_1",
+      "name": "spawn_agent",
+      "input": {
+        "systemPrompt": "You are a helper.",
+        "task": "Say done."
+      },
+      "output": {
+        "text": "Sub agent says done.",
+        "iterations": 1,
+        "finishReason": "completed",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5
+        }
+      },
+      "durationMs": 55,
+      "startedAt": "2026-11-25T22:28:50.750Z",
+      "endedAt": "2026-11-25T22:28:50.805Z"
     },
-    "taskComplete": {
-      "taskMetadata": {}
+    "postToolUse": {
+      "toolName": "spawn_agent",
+      "parameters": {
+        "systemPrompt": "You are a helper.",
+        "task": "Say done."
+      },
+      "result": "<117 chars>",
+      "success": true,
+      "executionTimeMs": 55
     }
   }
 }

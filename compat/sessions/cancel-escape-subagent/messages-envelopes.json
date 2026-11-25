@@ -1,6 +1,6 @@
 [
   {
-    "file": "/capture-root____/s/cancel-escape-subagent/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/agent_00000000-0000-4000-8000-000000000011.messages.json",
+    "file": "/capture-root____/s/cancel-escape-subagent/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000001/agent_00000000-0000-4000-8000-000000000015.messages.json",
     "keys": [
       "agent",
       "messages",
@@ -11,7 +11,7 @@
       "version"
     ],
     "agent": "subagent",
-    "sessionId": "c0ffee00-0000-4000-8000-000000000001__agent_00000000-0000-4000-8000-000000000011",
+    "sessionId": "c0ffee00-0000-4000-8000-000000000001__agent_00000000-0000-4000-8000-000000000015",
     "messages": 1
   },
   {

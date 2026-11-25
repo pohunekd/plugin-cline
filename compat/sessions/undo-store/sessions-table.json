@@ -2,8 +2,8 @@
   {
     "session_id": "c0ffee00-0000-4000-8000-000000000003",
     "source": "cli",
-    "started_at": "2026-11-06T00:18:57.167Z",
-    "ended_at": "2026-11-06T00:19:04.966Z",
+    "started_at": "2026-11-25T22:30:57.694Z",
+    "ended_at": "2026-11-25T22:31:05.390Z",
     "exit_code": 0,
     "status": "completed",
     "status_lock": 8,
@@ -12,7 +12,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/undo/ws",
     "workspace_root": "/capture-root____/s/undo/ws",
-    "team_name": "team-00017",
+    "team_name": "team-00014",
     "enable_tools": 1,
     "enable_spawn": 1,
     "enable_teams": 1,
@@ -25,7 +25,7 @@
     "metadata_json": {
       "sessionHistoryOrigin": {
         "mode": "user",
-        "version": "3.0.74"
+        "version": "3.0.75"
       },
       "git": {
         "branch": "main"
@@ -33,14 +33,14 @@
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793924339313,
+          "createdAt": 1795645859889,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793924339313,
+            "createdAt": 1795645859889,
             "runCount": 1,
             "kind": "commit"
           }
@@ -67,13 +67,13 @@
     "transcript_path": "",
     "hook_path": "",
     "messages_path": "/capture-root____/s/undo/fakehome/.cline/data/sessions/c0ffee00-0000-4000-8000-000000000003/c0ffee00-0000-4000-8000-000000000003.messages.json",
-    "updated_at": "2026-11-06T00:19:04.966Z"
+    "updated_at": "2026-11-25T22:31:05.390Z"
   },
   {
-    "session_id": "0000000000006_00000",
+    "session_id": "0000000000007_00000",
     "source": "cli",
-    "started_at": "2026-11-06T00:19:04.851Z",
-    "ended_at": "2026-11-06T00:19:07.664Z",
+    "started_at": "2026-11-25T22:31:05.271Z",
+    "ended_at": "2026-11-25T22:31:08.115Z",
     "exit_code": 0,
     "status": "completed",
     "status_lock": 5,
@@ -82,7 +82,7 @@
     "model": "stub-model",
     "cwd": "/capture-root____/s/undo/ws",
     "workspace_root": "/capture-root____/s/undo/ws",
-    "team_name": "team-00018",
+    "team_name": "team-00015",
     "enable_tools": 1,
     "enable_spawn": 1,
     "enable_teams": 1,
@@ -95,19 +95,19 @@
     "metadata_json": {
       "sessionHistoryOrigin": {
         "mode": "user",
-        "version": "3.0.74"
+        "version": "3.0.75"
       },
       "checkpoint": {
         "latest": {
           "ref": "0000000000000000000000000000000000000001",
-          "createdAt": 1793924339313,
+          "createdAt": 1795645859889,
           "runCount": 1,
           "kind": "commit"
         },
         "history": [
           {
             "ref": "0000000000000000000000000000000000000001",
-            "createdAt": 1793924339313,
+            "createdAt": 1795645859889,
             "runCount": 1,
             "kind": "commit"
           }
@@ -136,7 +136,7 @@
     },
     "transcript_path": "",
     "hook_path": "",
-    "messages_path": "/capture-root____/s/undo/fakehome/.cline/data/sessions/0000000000006_00000/0000000000006_00000.messages.json",
-    "updated_at": "2026-11-06T00:19:07.664Z"
+    "messages_path": "/capture-root____/s/undo/fakehome/.cline/data/sessions/0000000000007_00000/0000000000007_00000.messages.json",
+    "updated_at": "2026-11-25T22:31:08.115Z"
   }
 ]

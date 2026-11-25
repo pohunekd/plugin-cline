@@ -440,7 +440,7 @@ Findings of the smoke run:
   wrapper; the process layout under it is the wrapper's (`node ... bin/cline
   --id <uuid>`).
 
-## Verified behaviour (Cline 3.0.74, Linux x86_64)
+## Verified behaviour (Cline 3.0.75, Linux x86_64)
 
 Every row comes from the corpus in `compat/`. "Stub" means against
 `scripts/model-stub`, not a real model.
@@ -449,7 +449,7 @@ Every row comes from the corpus in `compat/`. "Stub" means against
 
 | Area | Result | Evidence |
 |---|---|---|
-| Version | `cline --version` and `cline version` print `3.0.74` | `install/version.txt` |
+| Version | `cline --version` and `cline version` print `3.0.75` | `install/version.txt` |
 | Packages | Wrapper `cline` (Node script `bin/cline`, `postinstall: node ./postinstall.mjs \|\| true`) plus `@cline/cli-linux-x64` holding a 161,793,504-byte ELF binary | `install/layout.txt`, `RELEASE` |
 | Process | The PTY root is `node` (comm `node-MainThread`); it spawns the binary as a child: comm `cline` (path in the platform package) without the postinstall cache, comm `.cline` (`bin/.cline`, a hard link) with it | `install/process-nocache.txt`, `install/process-cache.txt`, `install/postinstall-cache.txt` |
 | Settings | A pre-written `global-settings.json` with `telemetryOptOut: true` and `autoUpdateEnabled: false` keeps both values after a start; no other key is added | `install/settings-after-start.json` |
@@ -461,7 +461,7 @@ Every row comes from the corpus in `compat/`. "Stub" means against
 | State | Text | Evidence |
 |---|---|---|
 | Onboarding | `Welcome to Cline` / `Connect a model provider to get started.`, four cards, `↑/↓ navigate, Enter to select, Ctrl+C to exit` | `screens/onboarding/` |
-| Provider picker | `Choose a provider`, `Search providers...`, `▼ 228 more`, `Type to search, ↑/↓ navigate, Enter to select, Esc to go back` | `screens/provider-picker/` |
+| Provider picker | `Choose a provider`, `Search providers...`, `▼ 320 more`, `Type to search, ↑/↓ navigate, Enter to select, Esc to go back` | `screens/provider-picker/` |
 | API-key form | `OpenAI Compatible`, `Base URL`, `API key`, `Tab to switch fields, Enter to save, Esc to go back, Ctrl+C to exit` | `screens/api-key-form/` |
 | Model step | After saving the form against the stub: `Set model ID` / `Enter to create, Esc to go back to model selection` | `screens/model-step/120.txt` |
 | Sign-in | `Signing in with Cline` and `Signing in with ClinePass` end offline with `getaddrinfo ETIMEOUT api.workos.com` / `Esc to go back`; `Signing in with ChatGPT` shows `⠏ Waiting for sign-in...` and `If the browser didn't open:` with the authorize URL, and hands that URL to `xdg-open`. The URL's `state` and `code_challenge` are nonces of the aborted offline flow: redacted in `signin-opened-urls.txt`, left in the screen, and new on every capture | `screens/signin-*`, `screens/signin-opened-urls.txt` |
@@ -504,7 +504,7 @@ change for working, idle or blocked. The CLI sends OSC 0, 4, 10, 11, 12, 66,
 | Errors | An HTTP 400 from the provider fires `TaskError` (`agent_error`, `error.message`) after one request; the row reads `failed` | `hooks/error-400/`, `stub/error-400-requests.jsonl` |
 | Cancel | Escape while the model streams, Escape while a tool runs and Ctrl+C (which also exits) fire `SessionShutdown` (`session_shutdown`, no reason field), **never `TaskCancel`**; the row reads `cancelled`. Escape while a subagent streams fires `SessionShutdown` for the subagent (with its `parent_agent_id`) and for the lead | `hooks/cancel-*/`, `sessions/cancel-*/` |
 | `/quit` | Fires no hook | `hooks/assigned-quit/` (empty) |
-| `UserPromptSubmit` | Never fired in any TUI or headless turn of the corpus | `hooks/*/` |
+| `UserPromptSubmit` | Fired (`prompt_submit`) only by the headless prompt run that `--timeout` aborts; no TUI turn of the corpus fired it | `hooks/headless-timeout/` |
 | Agent team | `/team <task>`: `team_spawn_teammate` and `team_run_task` run; the teammate's hooks carry its own `agent_id`, the same `rootSessionId` and **`parent_agent_id: null`**, so a teammate looks like a lead in its hooks; store row `<root>__teamtask__<agent>__<suffix>`, `is_subagent=1`, `team_name`; team tables in `db/teams.db` | `hooks/team/`, `sessions/team/` |
 
 ### Hub placement (namespace only, private port)
@@ -514,15 +514,16 @@ change for working, idle or blocked. The CLI sends OSC 0, 4, 10, 11, 12, 66,
 | No hub, no sandbox mode | The TUI runs locally (`compatible_hub_unavailable`) and starts `.cline --cline-hub-daemon` as its child, a session leader that **survives the TUI's exit** | `hub/prewarm-*.txt`, `hub/prewarm-routing.tsv` |
 | Sandbox mode | Routing `local`, `forceLocalBackend: true`; no hub daemon while the TUI runs or after it exits | `hub/sandbox-*.txt`, `hub/sandbox-routing.tsv` |
 | Hub running | The TUI uses the hub (`Using discovered local hub runtime host`). **`--id <unknown uuid>` then fails with `Error: Unknown session: <id>`**; without `--id` the turn works, and its hooks run below the hub daemon (ancestors `.cline` > the namespace init), without a variable only the TUI had | `screens/hub-attach-*/`, `hooks/hub-attach/`, `hub/attach-*` |
-| Older hub | A 3.0.73 hub serving a 3.0.73 session: the 3.0.74 TUI falls back to the local runtime (`compatible_hub_unavailable`) and shows no hub dialog; the 3.0.73 hub keeps running | `screens/hub-outdated/`, `hub/outdated-*` |
+| Older hub | A 3.0.74 hub serving a 3.0.74 session: the 3.0.75 TUI falls back to the local runtime (`compatible_hub_unavailable`) and shows no hub dialog; the 3.0.74 hub keeps running | `screens/hub-outdated/`, `hub/outdated-*` |
 
 ### Headless
 
-`cline --json -t 3 "<prompt>"` against a reply held 30 s ran the full 30 s and
-exited 0 with `run_result` `completed`: the timeout is not applied to the
-first turn of a prompt run (source: `apps/cli/src/runtime/run-agent.ts:319-342`
-schedules it after `start()` has run that turn). NDJSON in
-`headless/timeout.ndjson`.
+`cline --json -t 3 "<prompt>"` against a reply held 30 s stops the first turn
+after 3 s: exit code 1, an `error` record `run timed out after 3s` and
+`run_result` `aborted` (Cline 3.0.74 ran the full 30 s and exited 0 with
+`completed`). The hooks are `UserPromptSubmit`, `TaskStart` and
+`SessionShutdown`; no `TaskComplete` fires. NDJSON in
+`headless/timeout.ndjson`, exit status in `headless/timeout-exit.txt`.
 
 ## Unverified
 
@@ -537,7 +538,7 @@ schedules it after `start()` has run that turn). NDJSON in
   those releases implement, but the kit and the smoke ran only against 0.44.0.
 - **`submit_delay_ms = 500`**: the capture kit's pause between typed text and
   Enter; a shorter delay is untested.
-- **Every Cline release after 3.0.74**: accepted by the version range, never captured.
+- **Every Cline release after 3.0.75**: accepted by the version range, never captured.
 - **macOS**: everything; the manager's capture lands as `compat/macos-arm64/`.
 - **Arch package** (`cline-cli`): the host package is 3.0.73, so the `arch`
   step recorded nothing; its layout under the release is unverified.
@@ -549,7 +550,7 @@ schedules it after `start()` has run that turn). NDJSON in
 - **Sign-in steps after the first screen**: the device-code screen
   (`Your code:`) and the model list (`Choose a model`) are source only
   (`tui/views/onboarding/screens.tsx:220,495`).
-- **`TaskCancel`**, **`UserPromptSubmit`**, **`PreCompact`**: never fired;
+- **`TaskCancel`**, **`PreCompact`**, and `UserPromptSubmit` in a TUI turn: never fired;
   when they fire, if ever, is unverified.
 - **VCR playback** (`CLINE_VCR=playback`) with the TUI.
 - What the release would send to `otel.cline.bot` or fetch from
