@@ -142,9 +142,11 @@ The package names core's `cline-hook-v1` handler (`requires`
   `SessionShutdown.sh`), each carrying the marker
   `# POHUNEK_INTEGRATION_ID=cline`. `--profile <name>` acts on the config home
   of a host profile; `status` and `doctor` report the files, `uninstall`
-  removes only the marked ones. An install refuses, writing nothing, when one
-  of the six names holds a file without the marker; a user hook under another
-  name (`TaskResume`, `TaskResume.py`) is not a collision, Cline runs both.
+  removes only the marked ones. Per core's contract (not driven here), an
+  install refuses, writing nothing, when one of the six names holds a file
+  without the marker; a user hook under another name (`TaskResume`,
+  `TaskResume.py`) is not a collision and Cline runs both (the smoke runs an
+  extensionless one).
 
 Cline runs the files of `<CLINE_DIR>/hooks/` for every turn on the host, not
 only for Pohunek sessions. The reporter exits 0 at once, without reading its
@@ -228,9 +230,10 @@ What the package does:
   question text hides the title, and a long option list scrolls the entry out
   of view (`compat/screens/question-clipped`, 80x24). Then the session is not
   `blocked`, `refuse_while_blocked` does not apply and `session input` can
-  answer the question. Closing it needs a core matcher for "no composer on
-  screen"; see Checks, "Detect rules against the corpus". No capture shows the
-  combined case.
+  answer the question. Core has had a `composer_absent` matcher since 0.42.0
+  (`detect-composer-absent-v1`) that could close it; the package does not use
+  it yet, and no capture shows the combined case. See Checks, "Detect rules
+  against the corpus".
 - **Process matching.** The hub daemon and plugin workers share comm `cline`
   with the agent; the process rules cannot tell them apart.
 
@@ -294,8 +297,8 @@ either can carry such a line:
   drawn. **Residual case (not closed, no capture):** a rule line in the
   question text moves the region below the title, and together with a clipped
   list neither phrase is in the region, so the question reads `working` and
-  `refuse_while_blocked` does not apply. Closing it needs a core matcher for
-  "no composer on screen".
+  `refuse_while_blocked` does not apply. Core's `composer_absent` matcher
+  (0.42.0) could close it; the package does not use it yet.
 
 `promo_modal`, `fork_confirm`, `history_picker`, `undo_picker` and
 `undo_confirm` have the composer drawn behind them, so they read the whole
@@ -361,7 +364,7 @@ served replies 0 to 9):
 | P1-D5 | Under `--auto-approve false` (set by the scenario's profile), a stub `run_commands` reads `blocked` with `Cline needs permission` on screen; `session input "hello"` is refused with `session_input_blocked`; the command did not run and the box still shows |
 | P1-D6 | `session stop` then `session resume` relaunches `cline --id <uuid>`, shows the earlier prompt and reply, accepts a further turn and keeps the native reference; resume of a session that never took a prompt (no `<id>/<id>.json`) is refused with `agent_native_reference_missing` (a session with a reported reference is not checked, see Limits) |
 | P2-D1 | With an isolated, compatible Cline hub running (`cline hub start` on the private port), a launch through the package reads `idle` and answers a stub turn; the hub daemon set is unchanged during and after the session; every hook of the session (the observer hooks) has the TUI's PTY root among its ancestors and `CLINE_SANDBOX=1`; no hub daemon runs below the session; `session inspect` reports `placement.outcome: clean` |
-| P2-D2 | After one stub turn the session's reference is the id the hook reported (`active_agent_session_id` and `native_session_id` equal the hook's `rootSessionId`); `/clear` then a turn re-binds it to the new id, `/fork` (confirmed through `pohunek attach` with piped Enter, because input is refused while the confirmation shows) then a turn re-binds it again, each equal to the `rootSessionId` of the observer hook; a stub `spawn_agent` turn is reported as one `cline` subagent with a parent id and lifecycle `completed` |
+| P2-D2 | After one stub turn the session's reference is the id the hook reported (`active_agent_session_id` and `native_session_id` equal the observer hook's `rootSessionId`, which on the first turn is also the launch id); `/clear` then a turn re-binds it to the new id, `/fork` (confirmed through `pohunek attach` with piped Enter, because input is refused while the confirmation shows) then a turn re-binds it again, each equal to the `rootSessionId` of the observer hook; a stub `spawn_agent` turn is reported as one `cline` subagent with a parent id and lifecycle `completed` |
 | P2-D3 | `pgrep -f -- --cline-hub-daemon` finds no process while the bare, turn, resumed, approval and identity sessions run and after they end (the package launches without any hub); the host's own hub set is unchanged |
 | P2-D4 | `integration install`, `status` and `doctor` (all with `--profile cline-local`) leave the observer hooks byte-identical (sha256); the six reporter files carry the marker; `uninstall` removes the six files, keeps the `hooks/` directory and leaves the observer hooks byte-identical |
 
@@ -476,7 +479,7 @@ schedules it after `start()` has run that turn). NDJSON in
   `/undo` switches through the reporter, `/team`, an aborted turn, a
   subagent stop with outcome `failed` or `cancelled`, and the reporter's
   `hub_hosted` refusal (a hook run by a hub carries no `CLINE_SANDBOX`).
-- **Core 0.42.0 to 0.43.x.** `requires` names features of 0.40 to 0.42, which
+- **Core 0.42.0 to 0.43.x.** `requires` names features of 0.38 to 0.42, which
   those releases implement, but the kit and the smoke ran only against 0.44.0.
 - **`submit_delay_ms = 500`**: the capture kit's pause between typed text and
   Enter; a shorter delay is untested.
