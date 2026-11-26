@@ -53,15 +53,15 @@ jobs:
 
   package:
     # Stand-in for the pohunek plugin kit (lint, double build, detect-check): it
-    # loads `package/` through the daemon crate of the core revision named in
-    # kit/Cargo.toml (a commit until core 0.45.0 is released, then its tag).
+    # loads `package/` through the daemon crate of the core tag named in
+    # kit/Cargo.toml.
     name: package
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Toolchain
-        # The channel in kit/rust-toolchain.toml is the pin of the core rev.
+        # The channel in kit/rust-toolchain.toml is the pin of the core tag.
         run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' kit/rust-toolchain.toml)" --profile minimal
       - name: kit tests
         working-directory: kit

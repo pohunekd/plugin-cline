@@ -583,11 +583,11 @@ measured on that platform; the sections below say how.
 
 | Behaviour | Linux x86_64 | macOS arm64 |
 |---|---|---|
-| Descriptor lint, double build, `verify` | verified (kit tests, `lint`, `prove`) | `lint` verified; `prove` builds the package once, no second build or `verify` |
-| `pohunek-plugin-kit prove` (install through the index path on an isolated daemon, `plugin inspect`, `plugin doctor` finds nothing) | verified: `pass`, kit from the v0.45.0 bundle | verified: `pass`, kit built from the v0.45.0 source tag on the Mac |
-| Cline binary integrity | verified: npm sha512 and binary sha256 in `compat/RELEASE` | verified: the same for `@cline/cli-darwin-arm64`; the binary is a Mach-O arm64 executable |
-| `cline --version` and `cline version` print `3.0.75` (the version probe's output) | verified | verified (throwaway HOME, `CLINE_DIR`, `CLINE_DATA_DIR`, telemetry opted out) |
-| `--help` of `cline` and of its 14 subcommands | verified (`compat/help/`) | verified: byte-identical to `compat/help/` |
+| Descriptor lint, double build, `verify` | verified (kit tests, `lint`, `prove`) | manual, not captured: `lint` ran and passed; `prove` builds the package once (no second build, no `verify`) |
+| `pohunek-plugin-kit prove` (install through the index path on an isolated daemon, `plugin inspect`, `plugin doctor` finds nothing) | verified: `pass`, kit from the v0.45.0 bundle | manual, not captured: `pass`, kit built from the v0.45.0 source tag on the Mac |
+| Cline binary integrity | verified: npm sha512 and binary sha256 in `compat/RELEASE` | manual, not captured: sha512 and binary sha256 of `@cline/cli-darwin-arm64` equal `compat/RELEASE` (the sha256 is recorded by `scripts/capture`); Mach-O arm64 executable |
+| `cline --version` and `cline version` print `3.0.75` (the version probe's output) | verified | manual, not captured: both printed `3.0.75`, exit 0 (throwaway HOME, `CLINE_DIR`, `CLINE_DATA_DIR`, telemetry opted out) |
+| `--help` of `cline` and of its 14 subcommands | verified (`compat/help/`) | manual, not captured: the output hashes equal those of `compat/help/` |
 | TUI screens and detect rules | verified (`compat/screens/`, kit tests) | unverified: no screen captured |
 | Hooks, reporter install, session identity, subagents | verified (`compat/hooks/`, `scripts/smoke`) | unverified |
 | Placement (no hub daemon, hub beside a session) | verified (`compat/hub/`, `scripts/smoke`) | unverified |
@@ -596,7 +596,9 @@ measured on that platform; the sections below say how.
 | `scripts/capture`, `scripts/smoke` | verified | not supported (they need Linux namespaces) |
 | Any release after 3.0.75, any real model or provider | unverified | unverified |
 
-How the macOS cells were measured: on one Mac, below a throwaway directory,
+"Manual, not captured" cells were typed by hand into a shell on one Mac
+(commands and outputs are in the P4 comment of issue #6); no script recorded
+them and nothing under `compat/` holds them. How they were measured: on one Mac, below a throwaway directory,
 with no `POHUNEK_*` variable, no model and no sign-in. The kit's `prove` ran
 from `package/` against the `pohunek`, `pohunekd` and `pohunek-sessiond` of
 the `pohunek-daemon-0.45.0-aarch64-apple-darwin` release archive (sha256
@@ -721,6 +723,11 @@ after 3 s: exit code 1, an `error` record `run timed out after 3s` and
   of [Platforms](#platforms) marked verified there: no screen, hook payload,
   process tree, store, hub or session was captured, and `detect-check` has no
   macOS screen to read. `pohunek-plugin-kit smoke` was not run on either platform.
+- **Install by id and `pohunek doctor` on a host** (D2 of #6): `prove` runs
+  the install and `plugin doctor` on an isolated throwaway-index daemon, never
+  `pohunek plugin install pohunek.runtime.cline` from the official index (no
+  release or entry exists yet) and never `pohunek doctor` on a real host, on
+  either platform.
 - **Other platforms** (macOS x86_64, Windows, Linux arm64, musl): none.
 - **Arch package** (`cline-cli`): the `arch` step records the layout only when
   the host package equals the release; the 3.0.75 package of the capture host is
