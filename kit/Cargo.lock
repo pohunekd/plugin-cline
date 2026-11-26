@@ -838,8 +838,8 @@ dependencies = [
 
 [[package]]
 name = "pohunek-client"
-version = "0.44.0"
-source = "git+https://github.com/zajca/pohunek?rev=4f1b8689ff3d3623e45cacd4002d915985b53ba3#4f1b8689ff3d3623e45cacd4002d915985b53ba3"
+version = "0.45.0"
+source = "git+https://github.com/zajca/pohunek?tag=v0.45.0#b7e45fcb84dbb747912201af6ffe863a77b449a3"
 dependencies = [
  "futures",
  "libc",
@@ -860,8 +860,8 @@ dependencies = [
 
 [[package]]
 name = "pohunek-daemon"
-version = "0.44.0"
-source = "git+https://github.com/zajca/pohunek?rev=4f1b8689ff3d3623e45cacd4002d915985b53ba3#4f1b8689ff3d3623e45cacd4002d915985b53ba3"
+version = "0.45.0"
+source = "git+https://github.com/zajca/pohunek?tag=v0.45.0#b7e45fcb84dbb747912201af6ffe863a77b449a3"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
@@ -909,8 +909,8 @@ dependencies = [
 
 [[package]]
 name = "pohunek-hostcheck"
-version = "0.44.0"
-source = "git+https://github.com/zajca/pohunek?rev=4f1b8689ff3d3623e45cacd4002d915985b53ba3#4f1b8689ff3d3623e45cacd4002d915985b53ba3"
+version = "0.45.0"
+source = "git+https://github.com/zajca/pohunek?tag=v0.45.0#b7e45fcb84dbb747912201af6ffe863a77b449a3"
 dependencies = [
  "pohunek-overlay",
  "pohunek-paths",
@@ -925,8 +925,8 @@ dependencies = [
 
 [[package]]
 name = "pohunek-knowledge"
-version = "0.44.0"
-source = "git+https://github.com/zajca/pohunek?rev=4f1b8689ff3d3623e45cacd4002d915985b53ba3#4f1b8689ff3d3623e45cacd4002d915985b53ba3"
+version = "0.45.0"
+source = "git+https://github.com/zajca/pohunek?tag=v0.45.0#b7e45fcb84dbb747912201af6ffe863a77b449a3"
 dependencies = [
  "pohunek-protocol",
  "serde",
@@ -937,13 +937,13 @@ dependencies = [
 
 [[package]]
 name = "pohunek-logging"
-version = "0.44.0"
-source = "git+https://github.com/zajca/pohunek?rev=4f1b8689ff3d3623e45cacd4002d915985b53ba3#4f1b8689ff3d3623e45cacd4002d915985b53ba3"
+version = "0.45.0"
+source = "git+https://github.com/zajca/pohunek?tag=v0.45.0#b7e45fcb84dbb747912201af6ffe863a77b449a3"
 
 [[package]]
 name = "pohunek-netbird"
-version = "0.44.0"
-source = "git+https://github.com/zajca/pohunek?rev=4f1b8689ff3d3623e45cacd4002d915985b53ba3#4f1b8689ff3d3623e45cacd4002d915985b53ba3"
+version = "0.45.0"
+source = "git+https://github.com/zajca/pohunek?tag=v0.45.0#b7e45fcb84dbb747912201af6ffe863a77b449a3"
 dependencies = [
  "pohunek-overlay",
  "pohunek-platform",
@@ -955,8 +955,8 @@ dependencies = [
 
 [[package]]
 name = "pohunek-overlay"
-version = "0.44.0"
-source = "git+https://github.com/zajca/pohunek?rev=4f1b8689ff3d3623e45cacd4002d915985b53ba3#4f1b8689ff3d3623e45cacd4002d915985b53ba3"
+version = "0.45.0"
+source = "git+https://github.com/zajca/pohunek?tag=v0.45.0#b7e45fcb84dbb747912201af6ffe863a77b449a3"
 dependencies = [
  "base64 0.22.1",
  "futures",
@@ -965,8 +965,8 @@ dependencies = [
 
 [[package]]
 name = "pohunek-overlay-tailscale"
-version = "0.44.0"
-source = "git+https://github.com/zajca/pohunek?rev=4f1b8689ff3d3623e45cacd4002d915985b53ba3#4f1b8689ff3d3623e45cacd4002d915985b53ba3"
+version = "0.45.0"
+source = "git+https://github.com/zajca/pohunek?tag=v0.45.0#b7e45fcb84dbb747912201af6ffe863a77b449a3"
 dependencies = [
  "pohunek-overlay",
  "pohunek-platform",
@@ -978,8 +978,8 @@ dependencies = [
 
 [[package]]
 name = "pohunek-package"
-version = "0.44.0"
-source = "git+https://github.com/zajca/pohunek?rev=4f1b8689ff3d3623e45cacd4002d915985b53ba3#4f1b8689ff3d3623e45cacd4002d915985b53ba3"
+version = "0.45.0"
+source = "git+https://github.com/zajca/pohunek?tag=v0.45.0#b7e45fcb84dbb747912201af6ffe863a77b449a3"
 dependencies = [
  "ed25519-dalek",
  "pohunek-platform",
@@ -995,8 +995,8 @@ dependencies = [
 
 [[package]]
 name = "pohunek-paths"
-version = "0.44.0"
-source = "git+https://github.com/zajca/pohunek?rev=4f1b8689ff3d3623e45cacd4002d915985b53ba3#4f1b8689ff3d3623e45cacd4002d915985b53ba3"
+version = "0.45.0"
+source = "git+https://github.com/zajca/pohunek?tag=v0.45.0#b7e45fcb84dbb747912201af6ffe863a77b449a3"
 dependencies = [
  "nix 0.29.0",
  "thiserror 2.0.21",
@@ -1004,8 +1004,8 @@ dependencies = [
 
 [[package]]
 name = "pohunek-platform"
-version = "0.44.0"
-source = "git+https://github.com/zajca/pohunek?rev=4f1b8689ff3d3623e45cacd4002d915985b53ba3#4f1b8689ff3d3623e45cacd4002d915985b53ba3"
+version = "0.45.0"
+source = "git+https://github.com/zajca/pohunek?tag=v0.45.0#b7e45fcb84dbb747912201af6ffe863a77b449a3"
 dependencies = [
  "async-io",
  "calcifer-macos-acl",
@@ -1025,8 +1025,8 @@ dependencies = [
 
 [[package]]
 name = "pohunek-protocol"
-version = "0.44.0"
-source = "git+https://github.com/zajca/pohunek?rev=4f1b8689ff3d3623e45cacd4002d915985b53ba3#4f1b8689ff3d3623e45cacd4002d915985b53ba3"
+version = "0.45.0"
+source = "git+https://github.com/zajca/pohunek?tag=v0.45.0#b7e45fcb84dbb747912201af6ffe863a77b449a3"
 dependencies = [
  "base64 0.22.1",
  "serde",
@@ -1038,8 +1038,8 @@ dependencies = [
 
 [[package]]
 name = "pohunek-service-config"
-version = "0.44.0"
-source = "git+https://github.com/zajca/pohunek?rev=4f1b8689ff3d3623e45cacd4002d915985b53ba3#4f1b8689ff3d3623e45cacd4002d915985b53ba3"
+version = "0.45.0"
+source = "git+https://github.com/zajca/pohunek?tag=v0.45.0#b7e45fcb84dbb747912201af6ffe863a77b449a3"
 dependencies = [
  "pohunek-paths",
  "pohunek-platform",
@@ -1051,8 +1051,8 @@ dependencies = [
 
 [[package]]
 name = "pohunek-session-worker"
-version = "0.44.0"
-source = "git+https://github.com/zajca/pohunek?rev=4f1b8689ff3d3623e45cacd4002d915985b53ba3#4f1b8689ff3d3623e45cacd4002d915985b53ba3"
+version = "0.45.0"
+source = "git+https://github.com/zajca/pohunek?tag=v0.45.0#b7e45fcb84dbb747912201af6ffe863a77b449a3"
 dependencies = [
  "libc",
  "nix 0.29.0",
@@ -1078,8 +1078,8 @@ dependencies = [
 
 [[package]]
 name = "pohunek-terminal"
-version = "0.44.0"
-source = "git+https://github.com/zajca/pohunek?rev=4f1b8689ff3d3623e45cacd4002d915985b53ba3#4f1b8689ff3d3623e45cacd4002d915985b53ba3"
+version = "0.45.0"
+source = "git+https://github.com/zajca/pohunek?tag=v0.45.0#b7e45fcb84dbb747912201af6ffe863a77b449a3"
 dependencies = [
  "base64 0.22.1",
  "serde",
@@ -1090,8 +1090,8 @@ dependencies = [
 
 [[package]]
 name = "pohunek-worker-protocol"
-version = "0.44.0"
-source = "git+https://github.com/zajca/pohunek?rev=4f1b8689ff3d3623e45cacd4002d915985b53ba3#4f1b8689ff3d3623e45cacd4002d915985b53ba3"
+version = "0.45.0"
+source = "git+https://github.com/zajca/pohunek?tag=v0.45.0#b7e45fcb84dbb747912201af6ffe863a77b449a3"
 dependencies = [
  "serde",
  "serde_json",

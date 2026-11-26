@@ -8,10 +8,9 @@ description = "Stand-in for the pohunek plugin kit: lints, builds and checks the
 [lib]
 path = "src/lib.rs"
 
-# The pin is the core revision that carries `transcripts-cline-session-v1`
-# (zajca/pohunek#1954), which no release has yet. Once core 0.45.0 is tagged
-# the three entries move to that tag.
+# The pin is the core release that carries `transcripts-cline-session-v1`
+# (zajca/pohunek#1954), the minimum core of the package.
 [dependencies]
-pohunek-daemon = { git = "https://github.com/zajca/pohunek", rev = "4f1b8689ff3d3623e45cacd4002d915985b53ba3" }
-pohunek-package = { git = "https://github.com/zajca/pohunek", rev = "4f1b8689ff3d3623e45cacd4002d915985b53ba3" }
-pohunek-protocol = { git = "https://github.com/zajca/pohunek", rev = "4f1b8689ff3d3623e45cacd4002d915985b53ba3" }
+pohunek-daemon = { git = "https://github.com/zajca/pohunek", tag = "v0.45.0" }
+pohunek-package = { git = "https://github.com/zajca/pohunek", tag = "v0.45.0" }
+pohunek-protocol = { git = "https://github.com/zajca/pohunek", tag = "v0.45.0" }

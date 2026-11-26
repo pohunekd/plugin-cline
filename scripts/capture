@@ -23,6 +23,8 @@ DRY_RUN=0
 RELEASE=""
 OLD_RELEASE=""
 REGISTRY="https://registry.npmjs.org"
+# The macOS arm64 platform package, recorded in compat/RELEASE beside the host's.
+DARWIN_PACKAGE="@cline/cli-darwin-arm64"
 # Terminal widths of the screen captures; the issue's contract is 20 to 200.
 WIDTHS=(20 40 80 120 160 200)
 REF_WIDTH=120
@@ -846,16 +848,45 @@ fetch_release() {
   printf '%s\n' "$release" >"$prefix/.release"
 }
 
+# fetch_darwin <release>: writes <root>/dl/<release>/darwin.lines, the
+# compat/RELEASE lines of the macOS arm64 platform package: its registry
+# integrity and the sha256 of its binary. The tarball is downloaded, checked
+# against the registry's sha512 integrity (and the one recorded in
+# compat/RELEASE) and read, never run, so any host can record it. It runs in
+# the install step, the only one with a network.
+fetch_darwin() {
+  local release="$1" pkg="$DARWIN_PACKAGE" dl="$ROOT/dl/$1" meta tarball integrity got pinned
+  mkdir -p "$dl"
+  meta="$dl/$(basename "$pkg").json"
+  curl -fsS --proto '=https' "$REGISTRY/${pkg//\//%2f}/$release" -o "$meta"
+  tarball="$(jq -er '.dist.tarball' "$meta")"
+  integrity="$(jq -er '.dist.integrity' "$meta")"
+  [[ "$tarball" == "$REGISTRY/"* ]] || die "tarball outside the registry: $tarball"
+  [[ "$integrity" == sha512-* ]] || die "integrity is not sha512: $integrity"
+  if [[ "$(release_field release)" == "$release" ]]; then
+    pinned="$(release_field "$pkg.integrity")"
+    [[ -z "$pinned" || "$pinned" == "$integrity" ]] || die "registry integrity of $pkg differs from compat/RELEASE"
+  fi
+  curl -fsS --proto '=https' "$tarball" -o "$dl/$(basename "$pkg").tgz"
+  got="sha512-$(perl -MDigest::SHA -e 'my $d = Digest::SHA->new(512); $d->addfile($ARGV[0]); my $b = $d->b64digest; $b .= "=" while length($b) % 4; print $b' "$dl/$(basename "$pkg").tgz")"
+  [[ "$got" == "$integrity" ]] || die "integrity mismatch for $pkg $release"
+  {
+    printf '%s.integrity=%s\n' "$pkg" "$integrity"
+    printf '%s.bin.sha256=%s\n' "$pkg" "$(tar -xzOf "$dl/$(basename "$pkg").tgz" package/bin/cline | sha256sum | awk '{print $1}')"
+  } >"$dl/darwin.lines"
+}
+
 step_install() {
   local release
   for release in "$RELEASE" ${OLD_RELEASE:+"$OLD_RELEASE"}; do
     if [[ -f "$(prefix_dir "$release")/.release" ]]; then
       log "already installed: $release"
-      continue
+    else
+      rm -f "$ROOT/dl/$release/integrity.tsv"
+      fetch_release "$release" "$(prefix_dir "$release")"
+      log "installed $release"
     fi
-    rm -f "$ROOT/dl/$release/integrity.tsv"
-    fetch_release "$release" "$(prefix_dir "$release")"
-    log "installed $release"
+    fetch_darwin "$release"
   done
 }
 
@@ -871,6 +902,7 @@ step_version() {
     [[ -z "$OLD_RELEASE" ]] || printf 'old_release=%s\n' "$OLD_RELEASE"
     awk -F'\t' '{ printf "%s.integrity=%s\n", $1, $2 }' "$ROOT/dl/$RELEASE/integrity.tsv"
     printf '%s.bin.sha256=%s\n' "$(platform_package)" "$(sha256sum "$bin" | awk '{print $1}')"
+    cat "$ROOT/dl/$RELEASE/darwin.lines"
   } >"$OUT/RELEASE"
   prepare_scn version --no-provider
   s="$(scn_dir version)"
