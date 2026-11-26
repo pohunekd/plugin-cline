@@ -1149,7 +1149,7 @@ step_dialogs() {
       pty_stop
       continue
     fi
-    need "dialogs: the prompt reaches the model" pty_submit_turn 'run a command'
+    expect "dialogs: the prompt reaches the model" pty_submit_turn 'run a command'
     if snap_wait approval "$w" 'Cline needs|Approve tool call' 20; then
       pty_keys y
       if [[ "$w" == "$REF_WIDTH" ]]; then
@@ -1161,7 +1161,7 @@ step_dialogs() {
         expect "dialogs at $w: the reply after approval" pty_wait 'Command done' 20
       fi
     fi
-    need "dialogs: the prompt reaches the model" pty_submit_turn 'ask me something'
+    expect "dialogs: the prompt reaches the model" pty_submit_turn 'ask me something'
     if snap_wait question "$w" 'Cline is asking|Type a' 20; then
       pty_keys 1
       sleep 0.5
@@ -1200,7 +1200,7 @@ step_dialogs() {
       pty_stop
       continue
     fi
-    need "dialogs: the prompt reaches the model" pty_submit_turn 'run a command'
+    expect "dialogs: the prompt reaches the model" pty_submit_turn 'run a command'
     if need "approval-$key: the approval box" pty_wait_dialog "approval-$key" '\[y\] Approve' 20; then
       sleep 1
       case "$key" in
@@ -1233,10 +1233,10 @@ step_dialogs() {
   prepare_scn approval-rule-line
   pty_start approval-rule-line "$REF_WIDTH" --auto-approve false
   if need "approval-rule-line: composer" pty_idle; then
-    need "dialogs: the prompt reaches the model" pty_submit_turn 'run a command'
+    expect "dialogs: the prompt reaches the model" pty_submit_turn 'run a command'
     if need "approval-rule-line: the approval box" pty_wait_dialog approval-rule-line '\[y\] Approve' 20; then
       sleep 1
-      need "approval-rule-line: a rule line on the approval screen" screen_has_rule_line
+      expect "approval-rule-line: a rule line on the approval screen" screen_has_rule_line
       snap approval-rule-line "$REF_WIDTH" '\[y\] Approve' 10
     fi
   fi
@@ -1263,7 +1263,7 @@ step_dialogs() {
   prepare_scn approval-rule-line-24
   pty_start approval-rule-line-24 80 --auto-approve false
   if need "approval-rule-line-24: composer" pty_idle; then
-    need "dialogs: the prompt reaches the model" pty_submit_turn 'run a command'
+    expect "dialogs: the prompt reaches the model" pty_submit_turn 'run a command'
     if need "approval-rule-line-24: the approval box" pty_wait_dialog approval-rule-line-24 'Cline needs permission' 20; then
       sleep 1
       need "approval-rule-line-24: the buttons stay visible" screen_has_buttons || true
@@ -1281,7 +1281,7 @@ step_dialogs() {
   prepare_scn question-clipped
   pty_start question-clipped 80 --auto-approve false
   if need "question-clipped: composer" pty_idle; then
-    need "dialogs: the prompt reaches the model" pty_submit_turn 'ask me something'
+    expect "dialogs: the prompt reaches the model" pty_submit_turn 'ask me something'
     if need "question-clipped: the question picker" pty_wait_dialog question-clipped 'Cline is asking a question' 20; then
       sleep 1
       need "question-clipped: the last entry is out of view" screen_lacks_custom_entry || true
