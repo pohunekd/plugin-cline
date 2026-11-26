@@ -576,12 +576,14 @@ Findings of the smoke run:
 
 Package `pohunek.runtime.cline` 0.2.0, digest
 `sha256:8db92baf5c4e98b958dffee90a7b4fae2b45b60659b0c5b0ebfb47cd6981b9d2`
-(identical on both platforms), Cline 3.0.75, core v0.45.0. "Verified" means
+(identical on both platforms), Cline 3.0.75, core v0.45.0, except the
+`scripts/smoke` rows (Cline 3.0.74, core `4f1b8689`, not rerun on the
+release). "Verified" means
 measured on that platform; the sections below say how.
 
 | Behaviour | Linux x86_64 | macOS arm64 |
 |---|---|---|
-| Descriptor lint, double build, `verify` | verified (kit tests, `prove`) | verified (`prove` builds from `package/`) |
+| Descriptor lint, double build, `verify` | verified (kit tests, `lint`, `prove`) | `lint` verified; `prove` builds the package once, no second build or `verify` |
 | `pohunek-plugin-kit prove` (install through the index path on an isolated daemon, `plugin inspect`, `plugin doctor` finds nothing) | verified: `pass`, kit from the v0.45.0 bundle | verified: `pass`, kit built from the v0.45.0 source tag on the Mac |
 | Cline binary integrity | verified: npm sha512 and binary sha256 in `compat/RELEASE` | verified: the same for `@cline/cli-darwin-arm64`; the binary is a Mach-O arm64 executable |
 | `cline --version` and `cline version` print `3.0.75` (the version probe's output) | verified | verified (throwaway HOME, `CLINE_DIR`, `CLINE_DATA_DIR`, telemetry opted out) |
@@ -718,7 +720,7 @@ after 3 s: exit code 1, an `error` record `run timed out after 3s` and
 - **macOS arm64**: everything in the Linux sections above except the rows
   of [Platforms](#platforms) marked verified there: no screen, hook payload,
   process tree, store, hub or session was captured, and `detect-check` has no
-  macOS screen to read. The kit's `smoke` was not run on either platform.
+  macOS screen to read. `pohunek-plugin-kit smoke` was not run on either platform.
 - **Other platforms** (macOS x86_64, Windows, Linux arm64, musl): none.
 - **Arch package** (`cline-cli`): the `arch` step records the layout only when
   the host package equals the release; the 3.0.75 package of the capture host is

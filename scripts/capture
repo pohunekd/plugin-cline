@@ -855,7 +855,7 @@ fetch_release() {
 # compat/RELEASE) and read, never run, so any host can record it. It runs in
 # the install step, the only one with a network.
 fetch_darwin() {
-  local release="$1" pkg="$DARWIN_PACKAGE" dl="$ROOT/dl/$1" meta tarball integrity got pinned
+  local release="$1" pkg="$DARWIN_PACKAGE" dl="$ROOT/dl/$1" meta tarball integrity got pinned binsha
   mkdir -p "$dl"
   meta="$dl/$(basename "$pkg").json"
   curl -fsS --proto '=https' "$REGISTRY/${pkg//\//%2f}/$release" -o "$meta"
@@ -870,9 +870,12 @@ fetch_darwin() {
   curl -fsS --proto '=https' "$tarball" -o "$dl/$(basename "$pkg").tgz"
   got="sha512-$(perl -MDigest::SHA -e 'my $d = Digest::SHA->new(512); $d->addfile($ARGV[0]); my $b = $d->b64digest; $b .= "=" while length($b) % 4; print $b' "$dl/$(basename "$pkg").tgz")"
   [[ "$got" == "$integrity" ]] || die "integrity mismatch for $pkg $release"
+  binsha="$(tar -xzOf "$dl/$(basename "$pkg").tgz" package/bin/cline | sha256sum | awk '{print $1}')"
+  [[ "$binsha" =~ ^[0-9a-f]{64}$ && "$binsha" != e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 ]] ||
+    die "no binary in the $pkg tarball"
   {
     printf '%s.integrity=%s\n' "$pkg" "$integrity"
-    printf '%s.bin.sha256=%s\n' "$pkg" "$(tar -xzOf "$dl/$(basename "$pkg").tgz" package/bin/cline | sha256sum | awk '{print $1}')"
+    printf '%s.bin.sha256=%s\n' "$pkg" "$binsha"
   } >"$dl/darwin.lines"
 }
 
@@ -886,7 +889,7 @@ step_install() {
       fetch_release "$release" "$(prefix_dir "$release")"
       log "installed $release"
     fi
-    fetch_darwin "$release"
+    [[ "$release" != "$RELEASE" ]] || fetch_darwin "$release"
   done
 }
 
@@ -902,6 +905,7 @@ step_version() {
     [[ -z "$OLD_RELEASE" ]] || printf 'old_release=%s\n' "$OLD_RELEASE"
     awk -F'\t' '{ printf "%s.integrity=%s\n", $1, $2 }' "$ROOT/dl/$RELEASE/integrity.tsv"
     printf '%s.bin.sha256=%s\n' "$(platform_package)" "$(sha256sum "$bin" | awk '{print $1}')"
+    [[ -f "$ROOT/dl/$RELEASE/darwin.lines" ]] || die "no macOS arm64 record; run the install step"
     cat "$ROOT/dl/$RELEASE/darwin.lines"
   } >"$OUT/RELEASE"
   prepare_scn version --no-provider
