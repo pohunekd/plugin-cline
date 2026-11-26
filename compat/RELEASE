@@ -3,3 +3,5 @@ old_release=3.0.74
 cline.integrity=sha512-pPS9viwLrFN+gsepAqPo8lVv5wrjp8CzVB9UbRHwV0RbpvsrRSHxtoHoxMN2tvONuOLvTIWiEYPE3h3KWHqV0g==
 @cline/cli-linux-x64.integrity=sha512-I9uEOAmfphHjr6Bwvq+hzCx9bHAtjH8r7M0KyF4iS6SdzDAIcZxlaLWduAOu8vZ6ws3xkd4vqDU0StpznNmrHw==
 @cline/cli-linux-x64.bin.sha256=f63e3073dcd3b5d045cca6a78a65250b9baecf7d599a1206276255a5fc4f58fe
+@cline/cli-darwin-arm64.integrity=sha512-pGdM5GbjUIF3W4QrO/JtPJrPca6tB5oLtYmNeSELqDMNyAvzx6Qa56Hlcs3tCUPlEAamv0a2UCoOQ6JmnGv5SQ==
+@cline/cli-darwin-arm64.bin.sha256=4180d55d6062ee3c1713979350f1b6503db5762f7d302584ecc1be41d92ca67c

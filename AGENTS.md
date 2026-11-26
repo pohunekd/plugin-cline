@@ -24,6 +24,12 @@ the epic #1; this repository's issues are P0-P5.
   scenario, inside user, network, mount, UTS and PID namespaces with only a
   loopback interface. Never run it with a real HOME, never install it
   system-wide, never use sudo or containers.
+- **macOS has no namespace isolation.** `scripts/capture` refuses it. Manual
+  macOS checks run only read-only commands (`--version`, `--help`) of the
+  checked npm binary, below a throwaway directory with `env -i`, a throwaway
+  HOME, `CLINE_DIR` and `CLINE_DATA_DIR`, `telemetryOptOut` set, no model, no
+  sign-in and no TUI; anything that starts a hub or a session needs a
+  `sandbox-exec` path first. Such results are marked "manual, not captured".
 - **Never touch another Cline hub.** A hub daemon of the operator's own Cline
   may run on the host (default port 25463). The kit never connects to it,
   never stops it, and never reads its discovery record; its own hubs run only

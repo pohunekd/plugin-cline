@@ -9,7 +9,7 @@ terminal coding agent.
 | Package id | `pohunek.runtime.cline` |
 | Runtime id (`--agent`) | `cline` |
 | Upstream | Cline CLI by Cline Bot Inc. (Apache-2.0), npm package `cline` |
-| Status | **P3, transcripts and profiles**: `package/` (launch, status, resume, local placement, reported session identity, subagents, observation of a `cline` started outside Pohunek) for Cline 3.0.74 on Linux x86_64, proven against the P0 corpus and `scripts/smoke`. **Minimum core is 0.45.0 and the package cannot be released before it**: `transcripts-cline-session-v1` ([zajca/pohunek#1954](https://github.com/zajca/pohunek/issues/1954)) is merged in core but in no release (core 0.44.0 is the latest); the kit and the smoke run against core commit `4f1b8689` (older cores are unverified, and one without the feature refuses the descriptor with `runtime_feature_unsupported`) |
+| Status | **P4, platforms and index admission**: `package/` (launch, status, resume, local placement, reported session identity, subagents, observation of a `cline` started outside Pohunek) for Cline 3.0.75 (range from 3.0.74), captured on Linux x86_64 and checked on macOS arm64 only as far as [Platforms](#platforms) says. **Minimum core is 0.45.0**, the first release with `transcripts-cline-session-v1` ([zajca/pohunek#1954](https://github.com/zajca/pohunek/issues/1954)); the kit pins the `v0.45.0` tag (an older core refuses the descriptor with `runtime_feature_unsupported`, not driven here). The plugin index entry is prepared, not admitted |
 
 The plugin carries data and evidence only (descriptor, detect rules, captures).
 Handlers, reporters and parsers stay in the core repository
@@ -26,7 +26,7 @@ and the issues P0-P5 of this repository.
 | `scripts/capture` | Capture kit (bash): fetches a release from the npm registry, checks its integrity, runs Cline in throwaway homes inside loopback-only namespaces and records what it shows, which hooks it runs and what it stores |
 | `scripts/model-stub` | Loopback OpenAI-compatible chat-completions stub (Python standard library): scripted text, tool calls and HTTP errors |
 | `scripts/hook-log` | Cline file hook that logs one hook call: payload, environment names, `CLINE_*`/`CAPTURE_*` values, ancestor processes |
-| `compat/RELEASE` | The release every capture comes from: version, npm integrity of both packages, binary sha256, the older release the hub step runs beside it |
+| `compat/RELEASE` | The release every capture comes from: version, npm integrity of the wrapper and of the Linux x86_64 and macOS arm64 platform packages, the sha256 of both binaries, the older release the hub step runs beside it |
 | `compat/install/` | `--version`, npm layout, postinstall cache, process trees, settings after a start, telemetry self check |
 | `compat/help/` | `--help` of every command |
 | `compat/screens/<scenario>/<width>.txt` | Terminal screens; `INDEX.tsv` lists each scenario and width |
@@ -103,9 +103,12 @@ A new release is captured before the version lock moves: `--release` fetches
 it, `compat/RELEASE` records its integrity and binary sha256, and the
 previously recorded release becomes the older hub of the hub step. A release
 recorded in `compat/RELEASE` must still match the registry's integrity.
-macOS is not supported by this kit yet: `scripts/capture` refuses any
-platform but Linux (it has no `sandbox-exec` isolation path). The macOS arm64
-capture needs that path first and lands as `compat/macos-arm64/`.
+`scripts/capture` refuses any platform but Linux: it has no `sandbox-exec`
+isolation path, so no Cline screen, hook or store is captured on macOS (see
+[Platforms](#platforms)). Its install step does record the macOS arm64
+platform package (`@cline/cli-darwin-arm64`) in `compat/RELEASE`: it downloads
+the tarball, checks the registry's sha512 integrity and hashes the binary,
+and never runs it.
 
 ## Drift tracking
 
@@ -158,7 +161,19 @@ the committed evidence.
 
 ## Install and use
 
-The plugin is not in the plugin index yet. Install it from a checkout:
+Once the official plugin index admits a release, a host installs it by id and
+checks it:
+
+```bash
+pohunek plugin install pohunek.runtime.cline
+pohunek doctor
+```
+
+The index does not list it yet (`pohunekd/pohunek-plugin-index` admits an
+entry only for a published release of this repository, built by
+`.github/workflows/release.yml`). `pohunek plugin install` and `plugin doctor`
+of the built archive on an isolated daemon are what `pohunek-plugin-kit prove`
+runs (see [Platforms](#platforms)). Until then, install it from a checkout:
 
 ```bash
 cargo xtask package build /path/to/plugin-cline/package --output cline.tar.zst   # in zajca/pohunek
@@ -224,10 +239,8 @@ What the package does:
 The descriptor's `[transcripts]` table names core's parser `cline-session-v1`
 and `dir = "data/sessions"` below `[config_home]` (`CLINE_DIR`, else
 `~/.cline`); it needs the runtime feature `transcripts-cline-session-v1`,
-listed in `requires`. **That feature is in no core release yet** (it is on
-core `main` as `4f1b8689`; the kit and the smoke run against that commit and
-the pin moves to the `v0.45.0` tag on release), so the package cannot be
-released before core 0.45.0.
+listed in `requires`. The first core release with it is 0.45.0, which is
+the minimum core of the package; the kit pins that tag.
 
 With `POHUNEK_OBSERVE_EXTERNAL_AGENTS=1` in the daemon's environment (opt-in;
 core's contract is `docs/knowledge/guides/runtime-packages.md`, "Cline
@@ -410,11 +423,9 @@ config home, does not follow it: its sessions are not attributed. Set
 (cd kit && cargo test --locked)   # descriptor, version, process trees, screens, rule by rule, rule-line and quoting cases
 ```
 
-`kit/` pins the core revision it is proven against (`kit/Cargo.toml`) and the
-Rust toolchain of that revision (`kit/rust-toolchain.toml`). The pin is core
-commit `4f1b8689`, which carries `transcripts-cline-session-v1` before any
-release does; it moves to the `v0.45.0` tag when core releases it. Move both
-together with a new core release.
+`kit/` pins the core release it is proven against (`kit/Cargo.toml`, tag
+`v0.45.0`) and the Rust toolchain of that release (`kit/rust-toolchain.toml`).
+Move both together with a new core release.
 
 ### Detect rules against the corpus
 
@@ -561,6 +572,45 @@ Findings of the smoke run:
   wrapper; the process layout under it is the wrapper's (`node ... bin/cline
   --id <uuid>`).
 
+## Platforms
+
+Package `pohunek.runtime.cline` 0.2.0, digest
+`sha256:8db92baf5c4e98b958dffee90a7b4fae2b45b60659b0c5b0ebfb47cd6981b9d2`
+(identical on both platforms), Cline 3.0.75, core v0.45.0, except the
+`scripts/smoke` rows (Cline 3.0.74, core `4f1b8689`, not rerun on the
+release). "Verified" means
+measured on that platform; the sections below say how.
+
+| Behaviour | Linux x86_64 | macOS arm64 |
+|---|---|---|
+| Descriptor lint, double build, `verify` | verified (kit tests, `lint`, `prove`) | manual, not captured: `lint` ran and passed; `prove` builds the package once (no second build, no `verify`) |
+| `pohunek-plugin-kit prove` (install through the index path on an isolated daemon, `plugin inspect`, `plugin doctor` finds nothing) | verified: `pass`, kit from the v0.45.0 bundle | manual, not captured: `pass`, kit built from the v0.45.0 source tag on the Mac |
+| Cline binary integrity | verified: npm sha512 and binary sha256 in `compat/RELEASE` | manual, not captured: sha512 and binary sha256 of `@cline/cli-darwin-arm64` equal `compat/RELEASE` (the sha256 is recorded by `scripts/capture`); Mach-O arm64 executable |
+| `cline --version` and `cline version` print `3.0.75` (the version probe's output) | verified | manual, not captured: both printed `3.0.75`, exit 0 (throwaway HOME, `CLINE_DIR`, `CLINE_DATA_DIR`, telemetry opted out) |
+| `--help` of `cline` and of its 14 subcommands | verified (`compat/help/`) | manual, not captured: the output hashes equal those of `compat/help/` |
+| TUI screens and detect rules | verified (`compat/screens/`, kit tests) | unverified: no screen captured |
+| Hooks, reporter install, session identity, subagents | verified (`compat/hooks/`, `scripts/smoke`) | unverified |
+| Placement (no hub daemon, hub beside a session) | verified (`compat/hub/`, `scripts/smoke`) | unverified |
+| Transcripts and observation of a foreign `cline` | verified (`scripts/smoke`) | unverified |
+| Launch, resume, input, approval refusal with a stub | verified (`scripts/smoke`) | unverified |
+| `scripts/capture`, `scripts/smoke` | verified | not supported (they need Linux namespaces) |
+| Any release after 3.0.75, any real model or provider | unverified | unverified |
+
+"Manual, not captured" cells were typed by hand into a shell on one Mac
+(commands and outputs are in the P4 comment of issue #6); no script recorded
+them and nothing under `compat/` holds them. How they were measured: on one Mac, below a throwaway directory,
+with no `POHUNEK_*` variable, no model and no sign-in. The kit's `prove` ran
+from `package/` against the `pohunek`, `pohunekd` and `pohunek-sessiond` of
+the `pohunek-daemon-0.45.0-aarch64-apple-darwin` release archive (sha256
+checked against its `.sha256`). The Cline binary came from the npm tarball
+(sha512 integrity checked against the registry, binary sha256 against `compat/RELEASE`) and ran only
+`--version`, `version` and the `--help` forms. `prove` never launches the
+runtime program. The `prove` kit on Linux is the `pohunek-plugin-kit` of the
+v0.45.0 release run (`build-kit-x86_64-unknown-linux-gnu`, attestation
+verified against `refs/tags/v0.45.0`); the macOS kit was compiled from the
+same tag because that bundle is an artifact of the release run and is not
+published as a download.
+
 ## Verified behaviour (Cline 3.0.75, Linux x86_64)
 
 Every row comes from the corpus in `compat/`. "Stub" means against
@@ -656,9 +706,10 @@ after 3 s: exit code 1, an `error` record `run timed out after 3s` and
   subagent stop with outcome `failed` or `cancelled`, and the reporter's
   `hub_hosted` refusal (a hook run by a hub carries no `CLINE_SANDBOX`).
 - **Core before 0.45.0.** `requires` names features of 0.38 to 0.42 and
-  `transcripts-cline-session-v1`, which no release carries; the kit and the
-  smoke ran only against core commit `4f1b8689` (0.44.0 plus that feature).
-  A core without the feature refuses the descriptor with
+  `transcripts-cline-session-v1`, which the first release 0.45.0 carries. The
+  kit tests and `prove` ran against v0.45.0; the smoke run recorded above ran
+  against core commit `4f1b8689` (0.44.0 plus that feature), not rerun on the
+  release. A core without the feature refuses the descriptor with
   `runtime_feature_unsupported` (core's contract, not driven here).
 - **Observation beyond the smoke**: a `cline` in a Pohunek shell session (see
   Limits); how Cline uses a provider key from its environment; the daemon's
@@ -668,7 +719,16 @@ after 3 s: exit code 1, an `error` record `run timed out after 3s` and
 - **`submit_delay_ms = 500`**: the capture kit's pause between typed text and
   Enter; a shorter delay is untested.
 - **Every Cline release after 3.0.75**: accepted by the version range, never captured.
-- **macOS**: everything; the manager's capture lands as `compat/macos-arm64/`.
+- **macOS arm64**: everything in the Linux sections above except the rows
+  of [Platforms](#platforms) marked verified there: no screen, hook payload,
+  process tree, store, hub or session was captured, and `detect-check` has no
+  macOS screen to read. `pohunek-plugin-kit smoke` was not run on either platform.
+- **Install by id and `pohunek doctor` on a host** (D2 of #6): `prove` runs
+  the install and `plugin doctor` on an isolated throwaway-index daemon, never
+  `pohunek plugin install pohunek.runtime.cline` from the official index (no
+  release or entry exists yet) and never `pohunek doctor` on a real host, on
+  either platform.
+- **Other platforms** (macOS x86_64, Windows, Linux arm64, musl): none.
 - **Arch package** (`cline-cli`): the `arch` step records the layout only when
   the host package equals the release; the 3.0.75 package of the capture host is
   in `install/arch-layout.txt`, and a host without it (the drift runner) records
