@@ -374,6 +374,8 @@ wsgit() {
 # --- model stub -------------------------------------------------------------------
 
 STUB_PID=""
+# The request log of the running stub.
+STUB_LOG=""
 
 # stub_start <name> <script json>: serves the scripted replies on STUB_PORT
 # until the next stub_start or stub_stop.
@@ -384,6 +386,7 @@ stub_start() {
   mkdir -p "$dir"
   printf '%s\n' "$script" | jq . >"$dir/script.json"
   : >"$dir/requests.jsonl"
+  STUB_LOG="$dir/requests.jsonl"
   python3 -I "$ROOT/kit/model-stub" --port "$STUB_PORT" --script "$dir/script.json" \
     --log "$dir/requests.jsonl" 2>"$dir/stub.err" &
   STUB_PID=$!
@@ -490,6 +493,22 @@ pty_wait_gone() {
   done
 }
 
+# pty_wait_dialog <label> <extended-regex> [timeout]: pty_wait for a dialog;
+# a miss leaves the visible screen, the number of model requests the stub
+# received and whether the pane is dead in `diag/<label>.txt` of the step, so
+# a missed dialog can be told from a turn that never started.
+pty_wait_dialog() {
+  local label="$1"
+  shift
+  pty_wait "$@" && return 0
+  {
+    printf 'model requests received: %s\n' "$(grep -c . "$STUB_LOG" 2>/dev/null || true)"
+    printf 'pane dead: %s\n' "$(pty_dead && echo yes || echo no)"
+    pty_screen | snap_text
+  } | emit "$OUT/diag/$label.txt"
+  return 1
+}
+
 # pty_idle: waits for the composer and the mode footer, then lets the frame
 # settle; input typed into the first frame is lost.
 pty_idle() {
@@ -514,6 +533,25 @@ pty_submit() {
     pty_wait "$expect" 10 && return 0
     pty_keys Enter
   done
+  return 1
+}
+
+# pty_submit_turn <text>: submits the text as a prompt and waits until the
+# model stub has received the request of that turn. An Enter sent before the
+# composer takes input is dropped; it is repeated only while no request has
+# arrived, so it never lands on the dialog the turn opens.
+pty_submit_turn() {
+  local text="$1" tick
+  pty_type "$text"
+  sleep "$TYPE_PAUSE"
+  for _ in 1 2 3; do
+    pty_keys Enter
+    for ((tick = 0; tick < 50; tick++)); do
+      [[ -s "$STUB_LOG" ]] && return 0
+      sleep 0.2
+    done
+  done
+  log "no model request after submitting the prompt"
   return 1
 }
 
@@ -1111,7 +1149,7 @@ step_dialogs() {
       pty_stop
       continue
     fi
-    pty_submit 'run a command'
+    expect "dialogs: the prompt reaches the model" pty_submit_turn 'run a command'
     if snap_wait approval "$w" 'Cline needs|Approve tool call' 20; then
       pty_keys y
       if [[ "$w" == "$REF_WIDTH" ]]; then
@@ -1123,7 +1161,7 @@ step_dialogs() {
         expect "dialogs at $w: the reply after approval" pty_wait 'Command done' 20
       fi
     fi
-    pty_submit 'ask me something'
+    expect "dialogs: the prompt reaches the model" pty_submit_turn 'ask me something'
     if snap_wait question "$w" 'Cline is asking|Type a' 20; then
       pty_keys 1
       sleep 0.5
@@ -1162,8 +1200,8 @@ step_dialogs() {
       pty_stop
       continue
     fi
-    pty_submit 'run a command'
-    if need "approval-$key: the approval box" pty_wait '\[y\] Approve' 20; then
+    expect "dialogs: the prompt reaches the model" pty_submit_turn 'run a command'
+    if need "approval-$key: the approval box" pty_wait_dialog "approval-$key" '\[y\] Approve' 20; then
       sleep 1
       case "$key" in
         n) pty_keys n ;;
@@ -1195,10 +1233,10 @@ step_dialogs() {
   prepare_scn approval-rule-line
   pty_start approval-rule-line "$REF_WIDTH" --auto-approve false
   if need "approval-rule-line: composer" pty_idle; then
-    pty_submit 'run a command'
-    if need "approval-rule-line: the approval box" pty_wait '\[y\] Approve' 20; then
+    expect "dialogs: the prompt reaches the model" pty_submit_turn 'run a command'
+    if need "approval-rule-line: the approval box" pty_wait_dialog approval-rule-line '\[y\] Approve' 20; then
       sleep 1
-      need "approval-rule-line: a rule line on the approval screen" screen_has_rule_line
+      expect "approval-rule-line: a rule line on the approval screen" screen_has_rule_line
       snap approval-rule-line "$REF_WIDTH" '\[y\] Approve' 10
     fi
   fi
@@ -1225,8 +1263,8 @@ step_dialogs() {
   prepare_scn approval-rule-line-24
   pty_start approval-rule-line-24 80 --auto-approve false
   if need "approval-rule-line-24: composer" pty_idle; then
-    pty_submit 'run a command'
-    if need "approval-rule-line-24: the approval box" pty_wait 'Cline needs permission' 20; then
+    expect "dialogs: the prompt reaches the model" pty_submit_turn 'run a command'
+    if need "approval-rule-line-24: the approval box" pty_wait_dialog approval-rule-line-24 'Cline needs permission' 20; then
       sleep 1
       need "approval-rule-line-24: the buttons stay visible" screen_has_buttons || true
       snap approval-rule-line 80 'Cline needs permission' 10
@@ -1243,8 +1281,8 @@ step_dialogs() {
   prepare_scn question-clipped
   pty_start question-clipped 80 --auto-approve false
   if need "question-clipped: composer" pty_idle; then
-    pty_submit 'ask me something'
-    if need "question-clipped: the question picker" pty_wait 'Cline is asking a question' 20; then
+    expect "dialogs: the prompt reaches the model" pty_submit_turn 'ask me something'
+    if need "question-clipped: the question picker" pty_wait_dialog question-clipped 'Cline is asking a question' 20; then
       sleep 1
       need "question-clipped: the last entry is out of view" screen_lacks_custom_entry || true
       snap question-clipped 80 'Cline is asking a question' 10
